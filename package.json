@@ -1,0 +1,35 @@
+{
+  "name": "stockcount-manager",
+  "private": true,
+  "version": "1.0.0",
+  "description": "StockCount Manager Monorepo",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start:api": "npm run start:dev -w apps/api",
+    "start:admin": "npm run dev -w apps/admin-web",
+    "db:migrate": "npm run migrate -w apps/api",
+    "db:seed": "npm run seed -w apps/api",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@react-navigation/bottom-tabs": "^7.15.2",
+    "@react-navigation/native": "^7.1.31",
+    "@react-navigation/stack": "^7.8.2",
+    "axios": "^1.13.6",
+    "lucide-react-native": "^0.576.0",
+    "react-native-quick-sqlite": "^8.2.7",
+    "react-native-safe-area-context": "^5.7.0",
+    "react-native-screens": "^4.24.0",
+    "react-native-vector-icons": "^10.3.0",
+    "react-native-vision-camera": "^4.7.3",
+    "vision-camera-code-scanner": "^0.2.0",
+    "zustand": "^5.0.11"
+  }
+}
