@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  metadata  Json?    @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  audits    Audit[]
+  branches  Branch[]
+  brands    Brand[]
+  items     Item[]
+  roles     Role[]
+  users     User[]
+}
+
+model Brand {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  tenantId  String   @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  branches  Branch[]
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model Branch {
+  id         String             @id @default(uuid()) @db.Uuid
+  name       String
+  code       String             @unique
+  status     String             @default("Active")
+  poc        String?
+  address    String?
+  resources  Int?
+  counters   Int?
+  shelves    Int?
+  gondolas   Int?
+  brandId    String             @db.Uuid
+  tenantId   String             @db.Uuid
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  audits     Audit[]
+  brand      Brand              @relation(fields: [brandId], references: [id])
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
+  locations  Location[]
+  userAccess UserBranchAccess[]
+}
+
+model User {
+  id               String             @id @default(uuid()) @db.Uuid
+  email            String             @unique
+  password         String
+  firstName        String?
+  lastName         String?
+  tenantId         String             @db.Uuid
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  assignments      AuditAssignment[]
+  auditLogs        AuditLog[]
+  tenant           Tenant             @relation(fields: [tenantId], references: [id])
+  branchAccess     UserBranchAccess[]
+  roles            UserRole[]
+  assignedSections AuditSection[]
+  signoffs         Signoff[]
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String
+  tenantId    String           @db.Uuid
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([name, tenantId])
+}
+
+model Permission {
+  id    String           @id @default(uuid()) @db.Uuid
+  name  String           @unique
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model UserBranchAccess {
+  userId   String @db.Uuid
+  branchId String @db.Uuid
+  branch   Branch @relation(fields: [branchId], references: [id])
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@id([userId, branchId])
+}
+
+model Location {
+  id            String         @id @default(uuid()) @db.Uuid
+  code          String
+  qrValue       String
+  parent_id     String?        @db.Uuid
+  branchId      String         @db.Uuid
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  auditSections AuditSection[]
+  branch        Branch         @relation(fields: [branchId], references: [id])
+  parent        Location?      @relation("Hierarchy", fields: [parent_id], references: [id])
+  children      Location[]     @relation("Hierarchy")
+
+  @@unique([branchId, code])
+  @@unique([branchId, qrValue])
+}
+
+model Item {
+  id             String             @id @default(uuid()) @db.Uuid
+  sku            String
+  name           String
+  description    String?
+  brandName      String?
+  gtin           String?
+  batch          String?
+  expiry         DateTime?
+  productionDate DateTime?
+  barcode        String?
+  qrCode         String?
+  serialNumber   String?
+  upc            String?
+  boxLength      Float?
+  boxWidth       Float?
+  boxHeight      Float?
+  boxWeight      Float?
+  tenantId       String             @db.Uuid
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  sohBaselines   AuditSohBaseline[]
+  countEvents    CountEvent[]
+  tenant         Tenant             @relation(fields: [tenantId], references: [id])
+  identifiers    ItemIdentifier[]
+  sectionTotals  SectionItemTotal[]
+  varianceTotals VarianceTotal[]
+
+  @@unique([tenantId, sku])
+}
+
+model ItemIdentifier {
+  id     String @id @default(uuid()) @db.Uuid
+  type   String
+  value  String @unique
+  itemId String @db.Uuid
+  item   Item   @relation(fields: [itemId], references: [id])
+}
+
+model Audit {
+  id            String             @id @default(uuid()) @db.Uuid
+  name          String
+  status        String             @default("DRAFT")
+  scheduledDate DateTime?
+  scheduledTime String?
+  tenantId      String             @db.Uuid
+  branchId      String             @db.Uuid
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  branch        Branch             @relation(fields: [branchId], references: [id])
+  tenant        Tenant             @relation(fields: [tenantId], references: [id])
+  assignments   AuditAssignment[]
+  logs          AuditLog[]
+  sections      AuditSection[]
+  sohBaselines  AuditSohBaseline[]
+  reports       Report[]
+  signoffs      Signoff[]
+}
+
+model AuditSection {
+  id             String             @id @default(uuid()) @db.Uuid
+  auditId        String             @db.Uuid
+  locationId     String             @db.Uuid
+  assignedUserId String?            @db.Uuid
+  status         String             @default("OPEN")
+  lockReason     String?
+  lockedBy       String?            @db.Uuid
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  audit          Audit              @relation(fields: [auditId], references: [id])
+  location       Location           @relation(fields: [locationId], references: [id])
+  assignedUser   User?              @relation(fields: [assignedUserId], references: [id])
+  countEvents    CountEvent[]
+  itemTotals     SectionItemTotal[]
+}
+
+model AuditAssignment {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  audit     Audit    @relation(fields: [auditId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model AuditSohBaseline {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String   @db.Uuid
+  itemId    String   @db.Uuid
+  quantity  Float
+  createdAt DateTime @default(now())
+  audit     Audit    @relation(fields: [auditId], references: [id])
+  item      Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([auditId, itemId])
+}
+
+model CountEvent {
+  id              String       @id @default(uuid()) @db.Uuid
+  client_event_id String       @unique
+  tenantId        String       @db.Uuid
+  sectionId       String       @db.Uuid
+  itemId          String       @db.Uuid
+  userId          String       @db.Uuid
+  quantity        Float
+  scannedAt       DateTime
+  metadata        Json?        @default("{}")
+  item            Item         @relation(fields: [itemId], references: [id])
+  section         AuditSection @relation(fields: [sectionId], references: [id])
+}
+
+model SectionItemTotal {
+  id        String       @id @default(uuid()) @db.Uuid
+  sectionId String       @db.Uuid
+  itemId    String       @db.Uuid
+  total     Float
+  item      Item         @relation(fields: [itemId], references: [id])
+  section   AuditSection @relation(fields: [sectionId], references: [id])
+
+  @@unique([sectionId, itemId])
+}
+
+model VarianceTotal {
+  id              String @id @default(uuid()) @db.Uuid
+  auditId         String @db.Uuid
+  itemId          String @db.Uuid
+  sohQuantity     Float
+  countedQuantity Float
+  variance        Float
+  item            Item   @relation(fields: [itemId], references: [id])
+
+  @@unique([auditId, itemId])
+}
+
+model DiscrepancyCase {
+  id        String              @id @default(uuid()) @db.Uuid
+  auditId   String              @db.Uuid
+  itemId    String              @db.Uuid
+  status    String              @default("OPEN")
+  createdAt DateTime            @default(now())
+  actions   DiscrepancyAction[]
+
+  @@unique([auditId, itemId])
+}
+
+model DiscrepancyAction {
+  id        String          @id @default(uuid()) @db.Uuid
+  caseId    String          @db.Uuid
+  type      String
+  notes     String?
+  createdAt DateTime        @default(now())
+  case      DiscrepancyCase @relation(fields: [caseId], references: [id])
+}
+
+model Report {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String   @db.Uuid
+  type      String
+  data      Json
+  createdAt DateTime @default(now())
+  audit     Audit    @relation(fields: [auditId], references: [id])
+}
+
+model Signoff {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String   @db.Uuid
+  userId    String   @db.Uuid
+  signature String
+  createdAt DateTime @default(now())
+  audit     Audit    @relation(fields: [auditId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([auditId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String?  @db.Uuid
+  userId    String?  @db.Uuid
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  audit     Audit?   @relation(fields: [auditId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+}

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "b631bb1d-c23b-4539-90e0-4b1580b0351e",
+    "email": "auditor1@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "cd686e4c-31c6-4f05-a0e2-15789178f73d",
+    "email": "auditor2@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "72ea93cf-7df2-4cb9-9ca1-37f013d5cfb9",
+    "email": "auditor3@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "8648a266-1a1a-46dc-8f68-8b526776a76c",
+    "email": "auditor4@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "7ce7816e-28c7-4ed2-8453-6c2ab5596e0c",
+    "email": "auditor5@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "82c0106d-4e5d-4241-9cee-b43adb20d365",
+    "email": "auditor6@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "fb6c4704-0295-46fe-9416-ce62da007e43",
+    "email": "auditor7@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "f8e8b608-bafc-4998-955d-0744a1706721",
+    "email": "auditor8@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "43ffd896-51a6-4a47-932a-0a009ff60a49",
+    "email": "alice@wonderland.com",
+    "tenantId": "3c7b12be-4a46-428f-bb6f-c0cddc09c5d3"
+  },
+  {
+    "id": "9014cbc0-2c71-4b31-a038-05294b46c090",
+    "email": "manager@athgadlang.com",
+    "tenantId": "ce6db3b8-074f-4d1e-a4c1-df2df688bd30"
+  },
+  {
+    "id": "a9a3634f-8638-4c84-9ae1-206921a5c67d",
+    "email": "admin@stockcount.com",
+    "tenantId": "e95a45d2-349b-4748-acf0-41492a0517fc"
+  },
+  {
+    "id": "7388d2a2-141f-469d-bd19-7af7c8622261",
+    "email": "admin@kamakapparel.store",
+    "tenantId": "bb0d8b8a-ecea-4c6c-bad3-352f3ff81d23"
+  },
+  {
+    "id": "b7b0b97a-30da-4339-82f9-fa7763588065",
+    "email": "test_manager@athgadlang.com",
+    "tenantId": "7096bee5-1398-43e2-81b9-94548301d27e"
+  }
+]
