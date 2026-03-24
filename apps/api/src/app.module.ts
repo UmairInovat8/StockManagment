@@ -14,6 +14,7 @@ import { ReportsModule } from './reports/reports.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersService } from './users/users.service';
 import { UsersController } from './users/users.controller';
+import { TenantController } from './tenant/tenant.controller';
 import { BrandsModule } from './brands/brands.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 
@@ -31,7 +32,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
     ReportsModule,
     BrandsModule
   ],
-  controllers: [AppController, UsersController],
+  controllers: [AppController, UsersController, TenantController],
   providers: [
     AppService,
     UsersService,

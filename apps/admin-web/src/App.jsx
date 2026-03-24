@@ -15,6 +15,7 @@ import Users from './pages/Users';
 import Locations from './pages/Locations';
 import Brands from './pages/Brands';
 import Logs from './pages/Logs';
+import Company from './pages/Company';
 
 const ProtectedRoute = ({ children }) => {
     const { user, loading } = useAuth();
@@ -95,6 +96,12 @@ function App() {
                     <Route path="/brands" element={
                         <ProtectedRoute>
                             <Brands />
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/company" element={
+                        <ProtectedRoute>
+                            <Company />
                         </ProtectedRoute>
                     } />
 

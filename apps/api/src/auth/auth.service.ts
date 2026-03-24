@@ -59,13 +59,13 @@ export class AuthService {
     }
 
     async register(data: any) {
-        const { companyName, email, password, firstName, lastName } = data;
+        const { companyName, companyCode, email, password, firstName, lastName } = data;
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // 1. Create Tenant
         // @ts-ignore
         const tenant = await this.prisma.tenant.create({
-            data: { name: companyName },
+            data: { company_name: companyName, company_code: companyCode || companyName.replace(/\s+/g, '-').toUpperCase().slice(0, 10) },
         });
 
         // 2. Ensure default role

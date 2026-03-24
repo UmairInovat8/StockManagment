@@ -89,8 +89,8 @@ const Reports = () => {
                             variances.map((v) => (
                                 <tr key={v.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-6 py-4">
-                                        <p className="font-bold text-slate-800">{v.item.name}</p>
-                                        <p className="text-xs font-mono text-slate-400">SKU: {v.item.sku}</p>
+                                        <p className="font-bold text-slate-800">{v.item.sku_name}</p>
+                                        <p className="text-xs font-mono text-slate-400">SKU: {v.item.sku_code}</p>
                                     </td>
                                     <td className="px-6 py-4 text-right font-medium text-slate-600">{v.sohQuantity}</td>
                                     <td className="px-6 py-4 text-right font-bold text-primary-dark">{v.countedQuantity}</td>

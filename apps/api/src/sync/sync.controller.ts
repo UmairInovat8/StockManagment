@@ -13,7 +13,7 @@ export class SyncController {
         const eventsWithTenant = events.map(e => ({
             ...e,
             tenantId: req.user.tenantId,
-            userId: req.user.id
+            userId: req.user.userId
         }));
         return this.syncService.processCountEvents(req.user.tenantId, eventsWithTenant);
     }

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import {
     Activity,
     Package,
@@ -14,13 +15,28 @@ import {
     Users
 } from 'lucide-react';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 const Dashboard = () => {
     const [stats, setStats] = useState({
-        totalAudits: 24,
-        activeAuditors: 6,
-        itemsLogged: '1.2M',
-        varianceRate: 1.8
+        totalAudits: 0,
+        activeAuditors: 0,
+        itemsLogged: '0',
+        varianceRate: 0,
+        recentActivity: []
     });
+
+    useEffect(() => {
+        const fetchDashboardData = async () => {
+            try {
+                const res = await axios.get(`${API}/tenant/dashboard`);
+                if (res.data) setStats(res.data);
+            } catch (err) {
+                console.error("Failed to fetch dashboard stats", err);
+            }
+        };
+        fetchDashboardData();
+    }, []);
 
     return (
         <div className="space-y-10 animate-fade-up">
@@ -106,14 +122,21 @@ const Dashboard = () => {
                     </div>
 
                     <div className="h-64 flex items-end justify-between gap-4">
-                        {[60, 45, 80, 55, 100, 75, 90, 65, 85, 40, 95, 70].map((v, i) => (
+                        {(stats.auditVelocity && stats.auditVelocity.length === 12 ? stats.auditVelocity : [0,0,0,0,0,0,0,0,0,0,0,0]).map((v, i) => {
+                            // Scale visual height smoothly (cap at 100)
+                            const displayHeight = Math.max(5, Math.min(100, v));
+                            return (
                             <div key={i} className="flex-1 group relative flex flex-col items-center justify-end h-full">
                                 <div
-                                    className={`w-full rounded-t-xl transition-all duration-500 cursor-pointer ${i === 4 ? 'bg-[#0f172a]' : 'bg-slate-100 group-hover:bg-[#38bdf8]'}`}
-                                    style={{ height: `${v}%` }}
-                                />
+                                    className={`w-full rounded-t-xl transition-all duration-500 cursor-pointer ${i === 11 ? 'bg-[#0f172a]' : 'bg-slate-100 group-hover:bg-[#38bdf8]'}`}
+                                    style={{ height: `${displayHeight}%` }}
+                                >
+                                    <div className="opacity-0 group-hover:opacity-100 absolute -top-8 left-1/2 -translate-x-1/2 bg-[#0f172a] text-white text-[10px] font-black py-1 px-2 rounded-lg transition-all">
+                                        {v}
+                                    </div>
+                                </div>
                             </div>
-                        ))}
+                        )})}
                     </div>
 
                     <div className="flex justify-between mt-8 pt-8 border-t border-slate-50 text-[10px] font-black text-slate-300 uppercase tracking-widest">
@@ -130,24 +153,25 @@ const Dashboard = () => {
                     </div>
 
                     <div className="space-y-8">
-                        {[
-                            { user: 'Auditor Alpha', action: 'completed SKU verification', time: 'Just now', icon: Shield },
-                            { user: 'System Sync', action: 'pushed local event queue', time: '12m ago', icon: Zap },
-                            { user: 'Admin Node', action: 'updated branch mapping', time: '2h ago', icon: Globe }
-                        ].map((log, i) => (
-                            <div key={i} className="flex gap-5 group items-start">
-                                <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-[#0f172a] group-hover:text-white transition-all">
-                                    <log.icon size={20} />
-                                </div>
-                                <div className="flex-1 border-b border-slate-50 pb-6">
-                                    <div className="flex justify-between mb-1">
-                                        <span className="text-[10px] font-black text-[#0f172a] uppercase tracking-widest">{log.user}</span>
-                                        <span className="text-[10px] font-bold text-slate-300 uppercase">{log.time}</span>
+                        {stats.recentActivity && stats.recentActivity.length > 0 ? stats.recentActivity.map((log, i) => {
+                            const IconComponent = log.iconName === 'Shield' ? Shield : Globe;
+                            return (
+                                <div key={i} className="flex gap-5 group items-start">
+                                    <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-[#0f172a] group-hover:text-white transition-all">
+                                        <IconComponent size={20} />
                                     </div>
-                                    <p className="text-sm text-slate-500 font-medium">{log.action}</p>
+                                    <div className="flex-1 border-b border-slate-50 pb-6">
+                                        <div className="flex justify-between mb-1">
+                                            <span className="text-[10px] font-black text-[#0f172a] uppercase tracking-widest">{log.user}</span>
+                                            <span className="text-[10px] font-bold text-slate-300 uppercase">{log.time}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-500 font-medium">{log.action}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        }) : (
+                            <div className="text-center text-slate-400 text-sm py-8">No recent activity found.</div>
+                        )}
                     </div>
 
                     <button className="w-full mt-10 btn-primary !py-4 text-[10px] uppercase tracking-[0.3em]">

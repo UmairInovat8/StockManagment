@@ -26,9 +26,19 @@ const BrandForm = ({ onSubmit, title, formData, setFormData, onClose }) => (
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand / Sub-Entity Name *</label>
                         <input
                             className="clean-input mt-1"
-                            value={formData.name}
-                            onChange={e => setFormData({ name: e.target.value })}
+                            value={formData.brand_name}
+                            onChange={e => setFormData({ ...formData, brand_name: e.target.value })}
                             placeholder="e.g. Retail Chain - Dubai"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand Code *</label>
+                        <input
+                            className="clean-input mt-1 font-mono"
+                            value={formData.brand_code}
+                            onChange={e => setFormData({ ...formData, brand_code: e.target.value })}
+                            placeholder="e.g. RCD-001"
                             required
                         />
                     </div>
@@ -47,7 +57,7 @@ const Brands = () => {
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
     const [editBrand, setEditBrand] = useState(null);
-    const [formData, setFormData] = useState({ name: '' });
+    const [formData, setFormData] = useState({ brand_name: '', brand_code: '' });
 
     const fetchBrands = async () => {
         try {
@@ -62,7 +72,7 @@ const Brands = () => {
 
     useEffect(() => { fetchBrands(); }, []);
 
-    const resetForm = () => setFormData({ name: '' });
+    const resetForm = () => setFormData({ brand_name: '', brand_code: '' });
 
     const handleCreate = async (e) => {
         e.preventDefault();
@@ -100,7 +110,7 @@ const Brands = () => {
 
     const openEdit = (brand) => {
         setEditBrand(brand);
-        setFormData({ name: brand.name });
+        setFormData({ brand_name: brand.brand_name, brand_code: brand.brand_code });
     };
 
     const closeForm = () => {
@@ -143,8 +153,8 @@ const Brands = () => {
                                     {brand._count?.branches ?? brand.branches?.length ?? 0} branch{(brand._count?.branches ?? 0) !== 1 ? 'es' : ''}
                                 </span>
                             </div>
-                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{brand.name}</h3>
-                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">{brand.id?.slice(0, 8)}...</p>
+                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{brand.brand_name}</h3>
+                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">{brand.brand_code}</p>
                             <div className="flex gap-2 mt-6 opacity-0 group-hover:opacity-100 transition-all">
                                 <button onClick={() => openEdit(brand)} className="flex-1 py-2 text-xs font-black text-slate-500 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all flex items-center justify-center gap-1">
                                     <Pencil size={12} /> Edit

@@ -79,7 +79,7 @@ const AuditDetail = () => {
             await axios.post(`${API}/audits/${id}/generate-sections`);
             fetchData();
         } catch (e) {
-            alert('Generation failed: ' + (e.response?.data?.message || e.message));
+            console.error('Generation failed: ' + (e.response?.data?.message || e.message));
         }
     };
 
@@ -89,7 +89,7 @@ const AuditDetail = () => {
             setAssigningTo(null);
             fetchData();
         } catch (e) {
-            alert('Assignment failed: ' + (e.response?.data?.message || e.message));
+            console.error('Assignment failed: ' + (e.response?.data?.message || e.message));
         }
     };
 
@@ -98,7 +98,7 @@ const AuditDetail = () => {
             await axios.post(`${API}/audits/${id}/discrepancies/${itemId}/resolve`, { action, comment: 'Resolution by manager' });
             fetchVariance();
         } catch (e) {
-            alert('Resolution failed');
+            console.error('Resolution failed');
         }
     };
 
@@ -107,9 +107,8 @@ const AuditDetail = () => {
             await axios.post(`${API}/audits/${id}/sign-off`, signOffData);
             setShowSignOff(false);
             fetchData();
-            alert('Audit cycle completed and certified successfully.');
         } catch (e) {
-            alert('Sign-off failed: ' + (e.response?.data?.message || e.message));
+            console.error('Sign-off failed: ' + (e.response?.data?.message || e.message));
         }
     };
 
@@ -120,10 +119,9 @@ const AuditDetail = () => {
         fd.append('file', file);
         try {
             await axios.post(`${API}/audits/${id}/soh-baseline`, fd);
-            alert('SOH Baseline uploaded successfully');
             if (activeTab === 'variance') fetchVariance();
         } catch (e) {
-            alert('Upload failed. Check CSV format.');
+            console.error('Upload failed. Check CSV format.');
         }
     };
 
@@ -167,7 +165,7 @@ const AuditDetail = () => {
                                 {audit.status}
                             </span>
                         </h1>
-                        <p className="text-slate-400 text-sm font-medium mt-1">Branch: <strong className="text-slate-600">{audit.branch?.name}</strong> • Scheduled: <strong className="text-slate-600">{audit.scheduledDate ? new Date(audit.scheduledDate).toLocaleDateString() : 'N/A'}</strong></p>
+                        <p className="text-slate-400 text-sm font-medium mt-1">Branch: <strong className="text-slate-600">{audit.branch?.branch_name}</strong> • Scheduled: <strong className="text-slate-600">{audit.audit_date_time ? new Date(audit.audit_date_time).toLocaleDateString() : 'N/A'}</strong></p>
                     </div>
                 </div>
                 <div className="flex gap-3">
@@ -293,10 +291,15 @@ const AuditDetail = () => {
                             </div>
                         </div>
 
-                        {filteredSections.length === 0 ? (
+                        {!(audit.sections?.length > 0) ? (
                             <div className="py-20 text-center border-2 border-dashed border-slate-50 rounded-[2rem]">
                                 <LayoutGrid size={48} className="mx-auto text-slate-100 mb-4" />
-                                <p className="text-slate-400 italic">{searchTerm ? 'No locations match your search.' : 'Branch layout not retrieved. Click "Retrieve Layout" to map locations for this audit.'}</p>
+                                <p className="text-slate-400 italic">Branch layout not retrieved. Click "Retrieve Layout" to map locations for this audit.</p>
+                            </div>
+                        ) : filteredSections.length === 0 ? (
+                            <div className="py-20 text-center border-2 border-dashed border-slate-50 rounded-[2rem]">
+                                <LayoutGrid size={48} className="mx-auto text-slate-100 mb-4" />
+                                <p className="text-slate-400 italic">No locations match your search.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

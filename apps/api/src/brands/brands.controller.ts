@@ -12,20 +12,30 @@ export class BrandsController {
         return this.prisma.brand.findMany({
             where: { tenantId: req.user.tenantId },
             include: { _count: { select: { branches: true } } },
-            orderBy: { name: 'asc' },
+            orderBy: { brand_name: 'asc' },
         });
     }
 
     @Post()
     async create(@Body() body: any, @Request() req: any) {
         return this.prisma.brand.create({
-            data: { name: body.name, tenantId: req.user.tenantId },
+            data: {
+                brand_name: body.brand_name || body.name,
+                brand_code: body.brand_code || body.code,
+                tenantId: req.user.tenantId,
+            },
         });
     }
 
     @Patch(':id')
     async update(@Param('id') id: string, @Body() body: any) {
-        return this.prisma.brand.update({ where: { id }, data: { name: body.name } });
+        return this.prisma.brand.update({
+            where: { id },
+            data: {
+                brand_name: body.brand_name || body.name,
+                brand_code: body.brand_code || body.code,
+            }
+        });
     }
 
     @Delete(':id')

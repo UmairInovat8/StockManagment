@@ -8,50 +8,80 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum BranchType {
+  PHARMACY
+  RETAIL
+}
+
+enum LocationType {
+  SHELF
+  COUNTER
+  GONDOLA
+  BIN
+}
+
 model Tenant {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  metadata  Json?    @default("{}")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  audits    Audit[]
-  branches  Branch[]
-  brands    Brand[]
-  items     Item[]
-  roles     Role[]
-  users     User[]
+  id           String    @id @default(uuid()) @db.Uuid
+  company_name String
+  company_code String    @unique
+  metadata     Json?     @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  audits       Audit[]
+  branches     Branch[]
+  brands       Brand[]
+  items        Item[]
+  roles        Role[]
+  users        User[]
 }
 
 model Brand {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  tenantId  String   @db.Uuid
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  branches  Branch[]
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  id             String    @id @default(uuid()) @db.Uuid
+  brand_name     String
+  brand_code     String    @unique
+  metadata       Json?     @default("{}")
+  profileUrl     String?
+  profileContent String?
+  tenantId       String    @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+  branches       Branch[]
+  items          Item[]
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
 }
 
 model Branch {
-  id         String             @id @default(uuid()) @db.Uuid
-  name       String
-  code       String             @unique
-  status     String             @default("Active")
-  poc        String?
-  address    String?
-  resources  Int?
-  counters   Int?
-  shelves    Int?
-  gondolas   Int?
-  brandId    String             @db.Uuid
-  tenantId   String             @db.Uuid
-  createdAt  DateTime           @default(now())
-  updatedAt  DateTime           @updatedAt
-  audits     Audit[]
-  brand      Brand              @relation(fields: [brandId], references: [id])
-  tenant     Tenant             @relation(fields: [tenantId], references: [id])
-  locations  Location[]
-  userAccess UserBranchAccess[]
+  id                   String             @id @default(uuid()) @db.Uuid
+  branch_name          String
+  branch_code          String             @unique
+  type                 BranchType         @default(RETAIL)
+  status               String             @default("ACTIVE") // ACTIVE, CLOSED
+  poc                  String?
+  branch_location      String? // Physical address (from image)
+  resources_assigned   Int?               @default(0)
+  counters_count       Int?               @default(0)
+  shelves_count        Int?               @default(0)
+  gondolas_count       Int?               @default(0)
+  area_manager_name    String?
+  business_entity_type String?
+  invoice_to           String? // Invoice To Be Issued To
+  count_schedule_date  DateTime?
+  metadata             Json?              @default("{}")
+  parentId             String?            @db.Uuid
+  brandId              String             @db.Uuid
+  tenantId             String             @db.Uuid
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  deletedAt            DateTime?
+  audits               Audit[]
+  brand                Brand              @relation(fields: [brandId], references: [id])
+  tenant               Tenant             @relation(fields: [tenantId], references: [id])
+  parent               Branch?            @relation("BranchHierarchy", fields: [parentId], references: [id])
+  children             Branch[]           @relation("BranchHierarchy")
+  locations            Location[]
+  userAccess           UserBranchAccess[]
 }
 
 model User {
@@ -69,7 +99,8 @@ model User {
   branchAccess     UserBranchAccess[]
   roles            UserRole[]
   assignedSections AuditSection[]
-  signoffs         Signoff[]
+  clientSignoffs   ClientSignoff[]
+  internalSignoffs InternalSignoff[]
 }
 
 model Role {
@@ -120,8 +151,10 @@ model Location {
   id            String         @id @default(uuid()) @db.Uuid
   code          String
   qrValue       String
+  locationType  LocationType   @default(SHELF)
   parent_id     String?        @db.Uuid
   branchId      String         @db.Uuid
+  metadata      Json?          @default("{}")
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   auditSections AuditSection[]
@@ -134,62 +167,81 @@ model Location {
 }
 
 model Item {
-  id             String             @id @default(uuid()) @db.Uuid
-  sku            String
-  name           String
-  description    String?
-  brandName      String?
-  gtin           String?
-  batch          String?
-  expiry         DateTime?
-  productionDate DateTime?
-  barcode        String?
-  qrCode         String?
-  serialNumber   String?
-  upc            String?
-  boxLength      Float?
-  boxWidth       Float?
-  boxHeight      Float?
-  boxWeight      Float?
-  tenantId       String             @db.Uuid
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  sohBaselines   AuditSohBaseline[]
-  countEvents    CountEvent[]
-  tenant         Tenant             @relation(fields: [tenantId], references: [id])
-  identifiers    ItemIdentifier[]
-  sectionTotals  SectionItemTotal[]
-  varianceTotals VarianceTotal[]
+  id              String             @id @default(uuid()) @db.Uuid
+  sku_code        String
+  sku_name        String
+  description     String?
+  client_sku_code String?
+  quantity        Float?             @default(0)
+  size_dimensions String?
+  status          String?            @default("ACTIVE")
+  uom             String?            @default("EA")
+  unit_cost_price Float?             @default(0)
+  brand_name      String?
+  gtin            String?
+  batch           String?
+  expiry          DateTime?
+  productionDate  DateTime?
+  barcode         String?
+  qrCode          String?
+  serialNumber    String?
+  upc_code        String?
+  box_dimensions  Json?
+  metadata        Json?              @default("{}")
+  brandId         String?            @db.Uuid
+  tenantId        String             @db.Uuid
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+  sohBaselines    AuditSohBaseline[]
+  countEvents     CountEvent[]
+  tenant          Tenant             @relation(fields: [tenantId], references: [id])
+  brand           Brand?             @relation(fields: [brandId], references: [id])
+  identifiers     ItemIdentifier[]
+  sectionTotals   SectionItemTotal[]
+  varianceTotals  VarianceTotal[]
 
-  @@unique([tenantId, sku])
+  @@unique([tenantId, sku_code])
 }
 
 model ItemIdentifier {
   id     String @id @default(uuid()) @db.Uuid
   type   String
-  value  String @unique
+  value  String
   itemId String @db.Uuid
   item   Item   @relation(fields: [itemId], references: [id])
+
+  @@index([value])
 }
 
 model Audit {
-  id            String             @id @default(uuid()) @db.Uuid
-  name          String
-  status        String             @default("DRAFT")
-  scheduledDate DateTime?
-  scheduledTime String?
-  tenantId      String             @db.Uuid
-  branchId      String             @db.Uuid
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  branch        Branch             @relation(fields: [branchId], references: [id])
-  tenant        Tenant             @relation(fields: [tenantId], references: [id])
-  assignments   AuditAssignment[]
-  logs          AuditLog[]
-  sections      AuditSection[]
-  sohBaselines  AuditSohBaseline[]
-  reports       Report[]
-  signoffs      Signoff[]
+  id                String             @id @default(uuid()) @db.Uuid
+  name              String
+  status            String             @default("DRAFT")
+  audit_date_time   DateTime?
+  suggestedChanges  Json?
+  transfersCleared  Boolean            @default(false)
+  itemsArranged     Boolean            @default(false)
+  internetApproved  Boolean            @default(false)
+  acknowledgmentLog Json?
+  reminderStatus    String?            @default("NONE") // NONE, WEEK_PRIOR, DAY_PRIOR, BOTH
+  checklistAckAt    DateTime?
+  resolvedAt        DateTime?
+  pharmacistSigned  Boolean            @default(false)
+  tenantId          String             @db.Uuid
+  branchId          String             @db.Uuid
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  branch            Branch             @relation(fields: [branchId], references: [id])
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  assignments       AuditAssignment[]
+  logs              AuditLog[]
+  sections          AuditSection[]
+  sohBaselines      AuditSohBaseline[]
+  reports           Report[]
+  clientSignoffs    ClientSignoff[]
+  internalSignoffs  InternalSignoff[]
+  notificationLogs  NotificationLog[]
 }
 
 model AuditSection {
@@ -210,12 +262,14 @@ model AuditSection {
 }
 
 model AuditAssignment {
-  id        String   @id @default(uuid()) @db.Uuid
-  auditId   String   @db.Uuid
-  userId    String   @db.Uuid
-  createdAt DateTime @default(now())
-  audit     Audit    @relation(fields: [auditId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+  id         String    @id @default(uuid()) @db.Uuid
+  auditId    String    @db.Uuid
+  userId     String    @db.Uuid
+  checkInAt  DateTime?
+  checkOutAt DateTime?
+  createdAt  DateTime  @default(now())
+  audit      Audit     @relation(fields: [auditId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
 }
 
 model AuditSohBaseline {
@@ -231,17 +285,21 @@ model AuditSohBaseline {
 }
 
 model CountEvent {
-  id              String       @id @default(uuid()) @db.Uuid
-  client_event_id String       @unique
-  tenantId        String       @db.Uuid
-  sectionId       String       @db.Uuid
-  itemId          String       @db.Uuid
-  userId          String       @db.Uuid
-  quantity        Float
-  scannedAt       DateTime
-  metadata        Json?        @default("{}")
-  item            Item         @relation(fields: [itemId], references: [id])
-  section         AuditSection @relation(fields: [sectionId], references: [id])
+  id                String       @id @default(uuid()) @db.Uuid
+  client_event_id   String       @unique
+  tenantId          String       @db.Uuid
+  sectionId         String       @db.Uuid
+  itemId            String       @db.Uuid
+  userId            String       @db.Uuid
+  quantity          Float
+  looseQuantity     Float?       @default(0) // Points for pharmacy
+  isExternalApiData Boolean      @default(false) // Tatmeen integration
+  dataSource        String?      @default("MANUAL") // TATMEEN, MANUAL, MASTER
+  scannedAt         DateTime
+  durationSeconds   Int?         @default(0)
+  metadata          Json?        @default("{}")
+  item              Item         @relation(fields: [itemId], references: [id])
+  section           AuditSection @relation(fields: [sectionId], references: [id])
 }
 
 model SectionItemTotal {
@@ -256,13 +314,16 @@ model SectionItemTotal {
 }
 
 model VarianceTotal {
-  id              String @id @default(uuid()) @db.Uuid
-  auditId         String @db.Uuid
-  itemId          String @db.Uuid
-  sohQuantity     Float
-  countedQuantity Float
-  variance        Float
-  item            Item   @relation(fields: [itemId], references: [id])
+  id                String  @id @default(uuid()) @db.Uuid
+  auditId           String  @db.Uuid
+  itemId            String  @db.Uuid
+  sohQuantity       Float
+  countedQuantity   Float
+  variance          Float
+  adjustmentQty     Float?  @default(0)
+  isResolved        Boolean @default(false)
+  pharmacistRemarks String?
+  item              Item    @relation(fields: [itemId], references: [id])
 
   @@unique([auditId, itemId])
 }
@@ -296,14 +357,33 @@ model Report {
   audit     Audit    @relation(fields: [auditId], references: [id])
 }
 
-model Signoff {
-  id        String   @id @default(uuid()) @db.Uuid
-  auditId   String   @db.Uuid
-  userId    String   @db.Uuid
-  signature String
-  createdAt DateTime @default(now())
-  audit     Audit    @relation(fields: [auditId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+model ClientSignoff {
+  id               String   @id @default(uuid()) @db.Uuid
+  auditId          String   @db.Uuid
+  userId           String   @db.Uuid
+  rating           Int?
+  varianceAck      Boolean  @default(false)
+  signature        String
+  checklistAnswers Json?
+  createdAt        DateTime @default(now())
+  audit            Audit    @relation(fields: [auditId], references: [id])
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@unique([auditId])
+}
+
+model InternalSignoff {
+  id               String   @id @default(uuid()) @db.Uuid
+  auditId          String   @db.Uuid
+  userId           String   @db.Uuid
+  grnStatus        Boolean  @default(false)
+  notes            String?
+  signature        String
+  teamSignature    String?
+  checklistAnswers Json?
+  createdAt        DateTime @default(now())
+  audit            Audit    @relation(fields: [auditId], references: [id])
+  user             User     @relation(fields: [userId], references: [id])
 
   @@unique([auditId])
 }
@@ -319,4 +399,39 @@ model AuditLog {
   createdAt DateTime @default(now())
   audit     Audit?   @relation(fields: [auditId], references: [id])
   user      User?    @relation(fields: [userId], references: [id])
+}
+
+model NotificationLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String   @db.Uuid
+  type      String // WEEK_PRIOR, DAY_PRIOR, CUSTOM
+  recipient String
+  content   String
+  sentAt    DateTime @default(now())
+  audit     Audit    @relation(fields: [auditId], references: [id])
+}
+
+model ErrorLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  auditId   String   @db.Uuid
+  itemId    String   @db.Uuid
+  userId    String   @db.Uuid
+  category  String // COUNT_ERROR, SYNC_ERROR, SCAN_ERROR
+  message   String
+  metadata  Json?    @default("{}")
+  createdAt DateTime @default(now())
+}
+
+model ImportJob {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  status    String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  total     Int      @default(0)
+  processed Int      @default(0)
+  failed    Int      @default(0)
+  message   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }

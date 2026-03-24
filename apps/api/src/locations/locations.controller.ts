@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Body, Param, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as Papa from 'papaparse';
 import { LocationsService } from './locations.service';
 
 @Controller('locations')
@@ -19,5 +21,32 @@ export class LocationsController {
     @Post()
     async create(@Body() createDto: any) {
         return this.locationsService.create(createDto);
+    }
+
+    @Post('import')
+    @UseInterceptors(FileInterceptor('file'))
+    async importCsv(@Request() req: any, @UploadedFile() file: Express.Multer.File) {
+        const csvString = file.buffer.toString();
+        const lines = csvString.split(/\r?\n/);
+        
+        // Find the actual header row
+        let headerIndex = 0;
+        for (let i = 0; i < Math.min(10, lines.length); i++) {
+            if (lines[i].toLowerCase().includes('warehouse') || lines[i].toLowerCase().includes('location')) {
+                headerIndex = i;
+                break;
+            }
+        }
+        
+        const dataToParse = lines.slice(headerIndex).join('\n');
+
+        const parsed = Papa.parse(dataToParse, { 
+            header: true, 
+            skipEmptyLines: true,
+            transformHeader: (header) => header.trim()
+        });
+
+        await this.locationsService.bulkSync(req.user.tenantId, parsed.data);
+        return { message: 'Locations import started', count: parsed.data.length };
     }
 }

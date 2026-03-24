@@ -16,6 +16,26 @@ export const AuthProvider = ({ children }) => {
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         }
         setLoading(false);
+
+        // Global interceptor for 401 Unauthorized responses
+        const interceptor = axios.interceptors.response.use(
+            (res) => res,
+            (err) => {
+                if (err.response && err.response.status === 401) {
+                    alert('Your secure session has expired. Please log in again to continue.');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    delete axios.defaults.headers.common['Authorization'];
+                    setUser(null);
+                    window.location.href = '/login';
+                }
+                return Promise.reject(err);
+            }
+        );
+
+        return () => {
+            axios.interceptors.response.eject(interceptor);
+        };
     }, []);
 
     const login = async (email, password) => {

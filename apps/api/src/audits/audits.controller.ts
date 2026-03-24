@@ -66,10 +66,27 @@ export class AuditsController {
     @UseInterceptors(FileInterceptor('file'))
     async uploadSoh(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
         const csvData = file.buffer.toString();
-        const parsed = Papa.parse(csvData, { header: true, skipEmptyLines: true });
-        // expected: sku, quantity
+        const lines = csvData.split(/\r?\n/);
+
+        // Find the actual header row
+        let headerIndex = 0;
+        for (let i = 0; i < Math.min(10, lines.length); i++) {
+            if (lines[i].toLowerCase().includes('article code') || lines[i].toLowerCase().includes('sku') || lines[i].toLowerCase().includes('item')) {
+                headerIndex = i;
+                break;
+            }
+        }
+        
+        const dataToParse = lines.slice(headerIndex).join('\n');
+
+        const parsed = Papa.parse(dataToParse, { 
+            header: true, 
+            skipEmptyLines: true,
+            transformHeader: (header) => header.trim()
+        });
+        
         await this.auditsService.uploadSohBaseline(id, parsed.data as any);
-        return { message: 'SOH Baseline uploaded' };
+        return { message: 'SOH Baseline uploaded', count: parsed.data.length };
     }
 
     @Get(':id/variance-report')
@@ -84,6 +101,32 @@ export class AuditsController {
         @Body() body: { action: string, comment: string }
     ) {
         return this.auditsService.resolveDiscrepancy(id, itemId, body.action, body.comment);
+    }
+
+    @Post(':id/import-results')
+    @UseInterceptors(FileInterceptor('file'))
+    async importResults(@Param('id') id: string, @Request() req: any, @UploadedFile() file: Express.Multer.File) {
+        const csvData = file.buffer.toString();
+        const lines = csvData.split(/\r?\n/);
+
+        // Find header row starting with Location or Part Number
+        let headerIndex = 0;
+        for (let i = 0; i < Math.min(10, lines.length); i++) {
+            if (lines[i].toLowerCase().includes('location') && lines[i].toLowerCase().includes('part number')) {
+                headerIndex = i;
+                break;
+            }
+        }
+        
+        // Use array mode to handle multi-column 'Quantity' duplicate headers cleanly.
+        const dataToParse = lines.slice(headerIndex).join('\n');
+        const parsed = Papa.parse(dataToParse, { 
+            header: false,
+            skipEmptyLines: true,
+        });
+
+        await this.auditsService.importRawResults(id, req.user.userId, parsed.data as any[][]);
+        return { message: 'Results imported successfully', count: parsed.data.length - 1 };
     }
 
     @Post(':id/sign-off')
