@@ -21,6 +21,14 @@ export class TenantController {
         });
     }
 
+    @Get('all')
+    async findAll() {
+        return this.prisma.tenant.findMany({
+            where: { deletedAt: null },
+            select: { id: true, companyName: true, companyCode: true }
+        });
+    }
+
     @Get('dashboard')
     async getDashboard(@Request() req: any) {
         const tenantId = req.user.tenantId;
@@ -51,7 +59,7 @@ export class TenantController {
 
         const recentActivity = audits.map(a => ({
             user: a.status === 'COMPLETED' ? 'Auditor / System' : 'System Node',
-            action: `${a.status === 'COMPLETED' ? 'Completed' : 'Initiated'} audit at ${a.branch?.branch_name || 'Branch'}`,
+            action: `${a.status === 'COMPLETED' ? 'Completed' : 'Initiated'} audit at ${a.branch?.branchName || 'Branch'}`,
             time: new Date(a.updatedAt).toLocaleDateString(),
             iconName: a.status === 'COMPLETED' ? 'Shield' : 'Globe'
         }));
@@ -90,12 +98,12 @@ export class TenantController {
 
     @Patch()
     async updateProfile(@Body() body: any, @Request() req: any) {
-        const { company_name, company_code, metadata } = body;
+        const { companyName, companyCode, metadata } = body;
         return this.prisma.tenant.update({
             where: { id: req.user.tenantId },
             data: {
-                ...(company_name && { company_name }),
-                ...(company_code && { company_code }),
+                ...(companyName && { companyName }),
+                ...(companyCode && { companyCode }),
                 ...(metadata && { metadata }),
             },
         });

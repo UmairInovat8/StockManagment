@@ -12,9 +12,10 @@ export class AuthService {
     ) { }
 
     async validateUser(email: string, pass: string): Promise<any> {
+        const normalizedEmail = email.toLowerCase();
         // @ts-ignore
         const user = await this.prisma.user.findUnique({
-            where: { email },
+            where: { email: normalizedEmail },
             include: {
                 roles: {
                     include: {
@@ -60,44 +61,56 @@ export class AuthService {
 
     async register(data: any) {
         const { companyName, companyCode, email, password, firstName, lastName } = data;
+        const normalizedEmail = email.toLowerCase();
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // 1. Create Tenant
-        // @ts-ignore
-        const tenant = await this.prisma.tenant.create({
-            data: { company_name: companyName, company_code: companyCode || companyName.replace(/\s+/g, '-').toUpperCase().slice(0, 10) },
-        });
+        return this.prisma.$transaction(async (tx) => {
+            // 1. Create Tenant
+            // @ts-ignore
+            const tenant = await tx.tenant.create({
+                data: { 
+                    companyName: companyName, 
+                    companyCode: companyCode || companyName.replace(/\s+/g, '-').toUpperCase().slice(0, 10) 
+                },
+            });
 
-        // 2. Ensure default role
-        // @ts-ignore
-        const role = await this.prisma.role.create({
-            data: { name: 'AuditManager', tenantId: tenant.id }
-        });
+            // 2. Ensure default role
+            // @ts-ignore
+            const role = await tx.role.create({
+                data: { name: 'AuditManager', tenantId: tenant.id }
+            });
 
-        // 3. Create User
-        // @ts-ignore
-        const user = await this.prisma.user.create({
-            data: {
-                email,
-                password: hashedPassword,
-                firstName,
-                lastName,
-                tenantId: tenant.id,
-                roles: {
-                    create: {
-                        roleId: role.id
+            // 3. Create Default Item Master
+            // @ts-ignore
+            await tx.itemMaster.create({
+                data: { name: 'Default Master', tenantId: tenant.id }
+            });
+
+            // 4. Create User
+            // @ts-ignore
+            const user = await tx.user.create({
+                data: {
+                    email: normalizedEmail,
+                    password: hashedPassword,
+                    firstName,
+                    lastName,
+                    tenantId: tenant.id,
+                    roles: {
+                        create: {
+                            roleId: role.id
+                        }
+                    }
+                },
+                include: {
+                    roles: {
+                        include: {
+                            role: true
+                        }
                     }
                 }
-            },
-            include: {
-                roles: {
-                    include: {
-                        role: true
-                    }
-                }
-            }
-        });
+            });
 
-        return this.login(user);
+            return this.login(user);
+        });
     }
 }

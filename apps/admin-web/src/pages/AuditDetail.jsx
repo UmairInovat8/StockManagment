@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../lib/api';
 import {
     ArrowLeft, LayoutGrid, ClipboardList,
     Upload, UserPlus, CheckCircle2, AlertCircle, ChevronRight, Search, Settings, History
 } from 'lucide-react';
 import SignOffModal from '../components/SignOffModal';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const AuditDetail = () => {
     const { id } = useParams();
@@ -27,7 +27,7 @@ const AuditDetail = () => {
         setErrorMsg(null);
         setLoading(true);
         try {
-            const auditRes = await axios.get(`${API}/audits/${id}`);
+            const auditRes = await api.get(`/audits/${id}`);
             if (!auditRes.data) {
                 setErrorMsg('Audit not found or does not belong to your account.');
             } else {
@@ -35,13 +35,6 @@ const AuditDetail = () => {
             }
         } catch (e) {
             console.error('[AuditDetail] Error fetching audit:', e);
-            if (e.response?.status === 401) {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                delete axios.defaults.headers.common['Authorization'];
-                navigate('/login');
-                return;
-            }
             setErrorMsg('Failed to load audit: ' + (e.response?.data?.message || e.message));
         } finally {
             setLoading(false);
@@ -49,7 +42,7 @@ const AuditDetail = () => {
 
         // Load users separately so failure here doesn't block the audit view
         try {
-            const usersRes = await axios.get(`${API}/users`);
+            const usersRes = await api.get('/users');
             setAllUsers(usersRes.data || []);
         } catch (e) {
             console.warn('[AuditDetail] Could not load users:', e.message);
@@ -59,7 +52,7 @@ const AuditDetail = () => {
     const fetchVariance = async () => {
         setLoadingVariance(true);
         try {
-            const res = await axios.get(`${API}/audits/${id}/variance-report`);
+            const res = await api.get(`/audits/${id}/variance-report`);
             setVarianceReport(res.data || []);
         } catch (e) {
             console.error('Error fetching variance report', e);
@@ -76,7 +69,7 @@ const AuditDetail = () => {
     const handleGenerateSections = async () => {
         if (!window.confirm('Retrieve branch layout? This will clear any existing assignments.')) return;
         try {
-            await axios.post(`${API}/audits/${id}/generate-sections`);
+            await api.post(`/audits/${id}/generate-sections`);
             fetchData();
         } catch (e) {
             console.error('Generation failed: ' + (e.response?.data?.message || e.message));
@@ -85,7 +78,7 @@ const AuditDetail = () => {
 
     const handleAssignAuditor = async (sectionId, userId) => {
         try {
-            await axios.patch(`${API}/audits/sections/${sectionId}/assign`, { userId: userId || null });
+            await api.patch(`/audits/sections/${sectionId}/assign`, { userId: userId || null });
             setAssigningTo(null);
             fetchData();
         } catch (e) {
@@ -95,7 +88,7 @@ const AuditDetail = () => {
 
     const handleResolveDiscrepancy = async (itemId, action) => {
         try {
-            await axios.post(`${API}/audits/${id}/discrepancies/${itemId}/resolve`, { action, comment: 'Resolution by manager' });
+            await api.post(`/audits/${id}/discrepancies/${itemId}/resolve`, { action, comment: 'Resolution by manager' });
             fetchVariance();
         } catch (e) {
             console.error('Resolution failed');
@@ -104,7 +97,7 @@ const AuditDetail = () => {
 
     const handleSignOff = async (signOffData) => {
         try {
-            await axios.post(`${API}/audits/${id}/sign-off`, signOffData);
+            await api.post(`/audits/${id}/sign-off`, signOffData);
             setShowSignOff(false);
             fetchData();
         } catch (e) {
@@ -118,10 +111,13 @@ const AuditDetail = () => {
         const fd = new FormData();
         fd.append('file', file);
         try {
-            await axios.post(`${API}/audits/${id}/soh-baseline`, fd);
+            const res = await api.post(`/audits/${id}/soh-baseline`, fd, { headers: { 'Content-Type': 'multipart/form-data' }});
+            alert(`✅ ${res.data.imported || 0} SOH records imported successfully. ${res.data.skipped || 0} skipped.`);
             if (activeTab === 'variance') fetchVariance();
         } catch (e) {
-            console.error('Upload failed. Check CSV format.');
+            alert('Upload failed: ' + (e.response?.data?.message || e.message));
+        } finally {
+            e.target.value = null;
         }
     };
 
@@ -165,13 +161,17 @@ const AuditDetail = () => {
                                 {audit.status}
                             </span>
                         </h1>
-                        <p className="text-slate-400 text-sm font-medium mt-1">Branch: <strong className="text-slate-600">{audit.branch?.branch_name}</strong> • Scheduled: <strong className="text-slate-600">{audit.audit_date_time ? new Date(audit.audit_date_time).toLocaleDateString() : 'N/A'}</strong></p>
+                        <p className="text-slate-400 text-sm font-medium mt-1">
+                            Branch: <strong className="text-slate-600">{audit.branch?.branchName || audit.branch?.branch_name}</strong> • 
+                            Catalog: <strong className="text-indigo-600 uppercase tracking-tight">{audit.itemMaster?.name || 'Default'}</strong> • 
+                            Scheduled: <strong className="text-slate-600">{(audit.auditDateTime || audit.audit_date_time) ? new Date(audit.auditDateTime || audit.audit_date_time).toLocaleDateString() : 'N/A'}</strong>
+                        </p>
                     </div>
                 </div>
                 <div className="flex gap-3">
                     <label className="bg-white border border-slate-100 text-[#0f172a] font-black px-6 py-3 rounded-2xl flex items-center gap-2 cursor-pointer hover:bg-slate-50 transition-all text-sm shadow-sm">
                         <Upload size={18} /> Import SOH
-                        <input type="file" className="hidden" onChange={handleFileUpload} />
+                        <input type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFileUpload} />
                     </label>
                     <button
                         onClick={() => setShowSignOff(true)}

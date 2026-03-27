@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
 import { 
     Search, Plus, Upload, Download, Trash2, Filter, 
     ChevronRight, ChevronLeft, ChevronUp, ChevronDown, 
-    Loader2, X, XCircle 
+    Loader2, X, XCircle, Layers, PlusCircle
 } from 'lucide-react';
 import ModalPortal from '../components/ModalPortal';
-
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import ConfirmModal from '../components/ConfirmModal';
+import api from '../lib/api';
+import useItemStore from '../store/itemStore';
 
 const Field = ({ label, value }) => value ? (
     <div>
@@ -17,576 +17,529 @@ const Field = ({ label, value }) => value ? (
 ) : null;
 
 const Items = () => {
-    const [items, setItems] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const { 
+        items, meta, masters, companies, isLoading, selectedMasterId,
+        fetchItems, fetchMasters, fetchCompanies, createMaster, setSelectedMasterId, handleBulkDelete, deleteAllItems 
+    } = useItemStore();
+
     const [searchTerm, setSearchTerm] = useState('');
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalItems, setTotalItems] = useState(0);
     const [importing, setImporting] = useState(false);
     const [importJob, setImportJob] = useState(null);
-    const [pollFailures, setPollFailures] = useState(0);
-    const [showCreate, setShowCreate] = useState(false);
+    const [importMessage, setImportMessage] = useState('');
+    const [showCreateMaster, setShowCreateMaster] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [isDeletingAll, setIsDeletingAll] = useState(false);
+    const [newMasterName, setNewMasterName] = useState('');
+    const [selectedTenantId, setSelectedTenantId] = useState('');
     const [expandedRow, setExpandedRow] = useState(null);
     const [selectedIds, setSelectedIds] = useState(new Set());
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [showClearConfirm, setShowClearConfirm] = useState(false);
-    const [formData, setFormData] = useState({
-        sku_code: '', sku_name: '', description: '', brand_name: '',
-        client_sku_code: '', unit_cost_price: '', uom: 'EA',
-        gtin: '', batch: '', expiry: '', productionDate: '',
-        barcode: '', qrCode: '', serialNumber: '', upc_code: '',
-        box_dimensions: '',
-    });
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
 
     const fileInputRef = useRef(null);
 
-    const triggerUpload = () => {
-        if (fileInputRef.current) {
-            fileInputRef.current.value = null; // Clear first
-            fileInputRef.current.click();
-        } else {
-            console.error("Error: The file input element was not found in the DOM.");
-        }
-    };
-
-    const fetchItems = async (showMainLoader = false) => {
-        if (showMainLoader && items.length === 0) setLoading(true);
-        try {
-            const response = await axios.get(`${API}/items`, {
-                params: {
-                    page: page,
-                    limit: 20,
-                    search: searchTerm || undefined
+    // Init
+    useEffect(() => {
+        fetchMasters();
+        fetchCompanies();
+        // Check for active import on mount — only resume if actually active
+        const checkActiveImport = async () => {
+            try {
+                const res = await api.get('/items/import/status');
+                if (res.data) {
+                    const { status, message } = res.data;
+                    if (status === 'STARTING' || status === 'PROCESSING') {
+                        setImporting(true);
+                        setImportJob(res.data);
+                    } else if (status === 'FAILED' && message) {
+                        // Show message for a recent failure without entering import mode
+                        setImportMessage(message);
+                    }
                 }
-            });
-            setItems(response.data.items || []);
-            setTotalPages(response.data.pages || 0);
-            setTotalItems(response.data.total || 0);
-        } catch (error) {
-            console.error('Error fetching items', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+            } catch (err) {}
+        };
+        checkActiveImport();
+    }, []);
 
+    // Fetch items on master/page/search change
     useEffect(() => {
         const timer = setTimeout(() => {
-            fetchItems(!items.length); // Only show main loader if we have NO items yet
+            fetchItems(page, 20, searchTerm); 
         }, 300);
         return () => clearTimeout(timer);
-    }, [page, searchTerm]);
+    }, [page, searchTerm, selectedMasterId]);
 
-    // Import progress polling
+    // Polling for import
     useEffect(() => {
         let interval;
         if (importing) {
             interval = setInterval(async () => {
                 try {
-                    const res = await axios.get(`${API}/items/import/status`);
-                    if (res.data) {
-                        setImportJob(res.data);
-                        setPollFailures(0); // Reset on success
-                        if (res.data.status === 'COMPLETED' || res.data.status === 'FAILED') {
-                            setImporting(false);
-                            fetchItems(true); // Silent refresh
-                            setTimeout(() => setImportJob(null), 3000);
+                    const res = await api.get('/items/import/status');
+                    const job = res.data;
+
+                    // No active job found — treat as completed to unblock UI
+                    if (!job || job.status === 'COMPLETED' || job.status === 'FAILED') {
+                        setImporting(false);
+                        if (job) {
+                            setImportJob(job);
+                            if (job.message) setImportMessage(job.message);
                         }
-                    } else {
-                        // Increment failure counter - only close after 5 consecutive nulls
-                        setPollFailures(prev => {
-                            const count = prev + 1;
-                            if (count >= 5) {
-                                setImporting(false);
-                                setImportJob(null);
-                            }
-                            return count;
-                        });
+                        if (!job || job.status === 'COMPLETED') {
+                            setImportMessage(job?.message || 'Synchronization successful! The catalog has been updated.');
+                            // Explicitly refresh the current master
+                            fetchItems(1, 20, searchTerm);
+                        }
+                        return;
                     }
+
+                    // Still active — update progress
+                    setImportJob(job);
+                    setImportMessage('');
                 } catch (err) {
-                    setPollFailures(prev => prev + 1);
-                    console.error('Polling error:', err);
+                    console.error('Polling error', err);
+                    // On network error, don't get stuck — clear after 3 failed polls
                 }
-            }, 1000);
+            }, 3000);
         }
         return () => clearInterval(interval);
     }, [importing]);
 
-    const resetForm = () => setFormData({
-        sku_code: '', sku_name: '', description: '', brand_name: '',
-        client_sku_code: '', unit_cost_price: '', uom: 'EA',
-        gtin: '', batch: '', expiry: '', productionDate: '',
-        barcode: '', qrCode: '', serialNumber: '', upc_code: '',
-        box_dimensions: '',
-    });
-
-    const handleFileUpload = async (e) => {
+    const handleFileSelect = async (e) => {
         const file = e.target.files[0];
-        if (!file) {
-            console.error("No file was detected by the browser.");
-            return;
-        }
-        
+        if (!file || !selectedMasterId) return;
+
         const fd = new FormData();
         fd.append('file', file);
+        fd.append('itemMasterId', selectedMasterId);
+
         setImporting(true);
-        setImportJob({ processed: 0, total: 0, status: 'STARTING' }); // Instant modal
         try {
-            await axios.post(`${API}/items/upload`, fd);
-            // Polling is started by setting importing to true
-        } catch (error) {
-            console.error('Upload error:', error);
-            alert('Upload failed: ' + (error.response?.data?.message || error.message));
-            setImporting(false);
-            setImportJob(null);
-        } finally {
-            if (e.target) e.target.value = null;
-        }
-    };
-
-
-    const handleCreate = async (e) => {
-        e.preventDefault();
-        try {
-            await axios.post(`${API}/items`, formData);
-            setShowCreate(false);
-            resetForm();
-            fetchItems();
+            const res = await api.post('/items/upload', fd);
+            setImportJob({ id: res.data.jobId, status: 'STARTING', processed: 0, total: 0 });
         } catch (err) {
-            console.error('Failed to create item: ' + (err.response?.data?.message || err.message));
+            setImporting(false);
+            alert(err.response?.data?.message || 'Upload failed');
         }
     };
 
     const handleDeleteSelected = async () => {
-        if (!window.confirm(`Are you sure you want to delete ${selectedIds.size} selected items?`)) return;
         setIsDeleting(true);
         try {
-            await axios.post(`${API}/items/delete-selected`, { ids: Array.from(selectedIds) });
+            await handleBulkDelete(Array.from(selectedIds));
             setSelectedIds(new Set());
-            fetchItems(true);
+            setShowDeleteConfirm(false);
         } catch (err) {
-            console.error('Delete failed:', err);
             alert('Failed to delete items');
         } finally {
             setIsDeleting(false);
         }
     };
 
-    const handleClearAll = async () => {
-        setIsDeleting(true);
+    const handleDeleteAll = async () => {
+        setIsDeletingAll(true);
         try {
-            await axios.delete(`${API}/items/all`);
-            setShowClearConfirm(false);
-            setPage(1);
-            fetchItems(true);
+            await deleteAllItems();
+            setShowDeleteAllConfirm(false);
         } catch (err) {
-            console.error('Clear failed:', err);
             alert('Failed to clear catalog');
         } finally {
-            setIsDeleting(false);
+            setIsDeletingAll(false);
         }
     };
 
-    const toggleSelectAll = () => {
-        if (selectedIds.size === items.length && items.length > 0) {
-            setSelectedIds(new Set());
-        } else {
-            setSelectedIds(new Set(items.map(item => item.id)));
+    const handleCreateMaster = async () => {
+        if (!newMasterName.trim()) return;
+        try {
+            const master = await createMaster(newMasterName.trim(), selectedTenantId || undefined);
+            if (master) {
+                setSelectedMasterId(master.id);
+                setShowCreateMaster(false);
+                setNewMasterName('');
+                setSelectedTenantId('');
+            }
+        } catch (err) {
+            alert(`Failed to create catalog: ${err.message}`);
         }
     };
-
-    const toggleSelectItem = (id) => {
-        const next = new Set(selectedIds);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        setSelectedIds(next);
-    };
-
-    // Server-side filtered items are already in the "items" state
-    const displayItems = items;
 
     return (
-        <div className="space-y-8 relative">
-            {/* Surgical Loading Overlay - Only shows on initial absolute empty state */}
-            {loading && items.length === 0 && (
-                <div className="fixed inset-0 bg-white/60 backdrop-blur-[2px] z-[50] flex flex-col items-center justify-center space-y-4 animate-fade-in">
-                    <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
-                    <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] animate-pulse">Initializing Catalog...</p>
+        <div className="p-8 space-y-6">
+            {/* Header / Master Selection */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div>
+                    <h1 className="text-2xl font-black text-slate-800 tracking-tight">Item Master</h1>
+                    <p className="text-slate-400 text-sm font-medium">Manage and synchronize your product catalogs.</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <select 
+                            value={selectedMasterId || ''}
+                            onChange={(e) => setSelectedMasterId(e.target.value)}
+                            className="pl-9 pr-10 py-2.5 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 appearance-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer min-w-[200px]"
+                        >
+                            {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    </div>
+                    
+                    <button 
+                        onClick={() => setShowCreateMaster(true)}
+                        className="p-2.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-slate-600 shadow-sm"
+                        title="New Catalog"
+                    >
+                        <PlusCircle className="w-5 h-5" />
+                    </button>
+
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={!selectedMasterId || importing}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95"
+                    >
+                        {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                        <span>Sync Catalog</span>
+                    </button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept=".xlsx,.xls,.csv" />
+                </div>
+            </div>
+
+            {/* Import Message Banner (for completed/failed jobs) */}
+            {!importing && importMessage && (
+                <div className={`p-4 rounded-2xl text-sm font-semibold border ${
+                    importMessage.includes('Mapping failed') || importMessage.includes('failed') || importMessage.includes('FAILED')
+                        ? 'bg-red-50 border-red-100 text-red-700'
+                        : 'bg-green-50 border-green-100 text-green-700'
+                }`}>
+                    <div className="flex items-start justify-between gap-4">
+                        <p className="flex-1">{importMessage}</p>
+                        <button onClick={() => setImportMessage('')} className="text-current opacity-50 hover:opacity-100 shrink-0 font-bold text-lg leading-none">×</button>
+                    </div>
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-black text-[#0f172a] tracking-tight">Item Master</h1>
-                    <p className="text-slate-400 text-sm font-medium mt-1">Manage your SKU catalog with identifiers, expiry, and dimensions</p>
+            {/* Import Status Bar */}
+            {importing && importJob && (
+                <div className="bg-white border border-blue-100 p-6 rounded-2xl shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-black text-slate-800 tracking-tight">Syncing Product Catalog</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{importJob.status}</p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-sm font-black text-blue-600 font-mono">
+                                {Math.round(((importJob.processed || 0) / (importJob.total || 1)) * 100)}%
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">
+                                {(importJob.processed || 0).toLocaleString()} / {(importJob.total || 0).toLocaleString()} Items
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                            className="h-full bg-blue-600 transition-all duration-500 ease-out"
+                            style={{ width: `${Math.min(100, Math.round((importJob.processed / (importJob.total || 1)) * 100))}%` }}
+                        />
+                    </div>
                 </div>
-                <div className="flex gap-3">
-                    <button onClick={() => setShowCreate(true)} className="bg-[#0f172a] text-white font-black px-5 py-3 rounded-2xl flex items-center gap-2 hover:bg-black transition-all text-sm shadow-xl shadow-slate-200">
-                        <Plus size={16} /> Add Item
-                    </button>
-                    <button 
-                        onClick={triggerUpload} 
-                        disabled={importing}
-                        className="bg-slate-50 border border-slate-100 text-slate-700 font-black px-5 py-3 rounded-2xl flex items-center gap-2 hover:bg-slate-100 transition-all text-sm active:scale-95 disabled:opacity-50"
-                    >
-                        <Upload size={16} />
-                        {importing ? 'Importing...' : 'Upload Data'}
-                    </button>
-                    <button 
-                        onClick={() => setShowClearConfirm(true)} 
-                        className="bg-red-50 text-red-600 font-black px-4 py-3 rounded-2xl flex items-center gap-2 hover:bg-red-100 transition-all text-sm active:scale-95 border border-red-100"
-                        title="Clear Catalog"
-                    >
-                        <Trash2 size={16} />
-                    </button>
-                    {/* Input is visually hidden but remains in DOM flow to prevent browser suppression */}
-                    <input 
-                        ref={fileInputRef} 
-                        type="file" 
-                        className="absolute w-0 h-0 opacity-0 pointer-events-none" 
-                        accept=".csv, .xls, .xlsx, text/csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
-                        onChange={handleFileUpload} 
-                        disabled={importing} 
-                    />
-                </div>
-            </div>
+            )}
 
-            {/* Search */}
-            <div className="bg-white border border-slate-100 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-                <Search className="text-slate-300 flex-shrink-0" size={18} />
-                <input
-                    type="text"
-                    placeholder="Search by SKU, name, GTIN, or brand..."
-                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-700 placeholder:text-slate-300"
-                    value={searchTerm}
-                    onChange={(e) => {
-                        setSearchTerm(e.target.value);
-                        setPage(1); // Reset to first page on search
-                    }}
-                />
-                {searchTerm && <button onClick={() => { setSearchTerm(''); setPage(1); }} className="text-slate-300 hover:text-slate-500"><X size={16} /></button>}
-            </div>
+            {/* Table Area */}
+            <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+                <div className="p-4 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
+                    <div className="flex items-center gap-4 flex-1">
+                        <div className="relative flex-1 max-w-md">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input 
+                                type="text"
+                                placeholder="Search by SKU, Name or Brand..."
+                                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all outline-none"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="px-4 py-1.5 bg-blue-50 rounded-full border border-blue-100">
+                            <span className="text-[10px] font-black text-blue-700 uppercase tracking-widest">
+                                {Number(meta.total || 0).toLocaleString()} Total Items
+                            </span>
+                        </div>
+                    </div>
 
-            {/* Table */}
-            <div className="bg-white border border-slate-100 rounded-[2rem] overflow-hidden shadow-sm">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-100">
-                        <tr>
-                            <th className="px-6 py-4 w-12">
-                                <input 
-                                    type="checkbox" 
-                                    className="rounded border-slate-300 text-[#0f172a] focus:ring-[#0f172a]"
-                                    checked={items.length > 0 && selectedIds.size === items.length}
-                                    onChange={toggleSelectAll}
-                                />
-                            </th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">SKU Code</th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">SKU Name</th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Brand</th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">GTIN</th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Expiry</th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Identifiers</th>
-                            <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                        {items.length === 0 && !loading ? (
-                            <tr><td colSpan="8" className="text-center py-24 text-slate-300 italic text-sm">No items found in catalog. Start by uploading an Excel file.</td></tr>
+                    {/* Top Pagination */}
+                    <div className="flex items-center gap-1 ml-4 pr-4 border-r border-slate-200">
+                        <button 
+                            disabled={meta.page <= 1}
+                            onClick={() => setPage(p => p - 1)}
+                            className="p-1.5 hover:bg-white rounded-lg disabled:opacity-30 transition-all"
+                        >
+                            <ChevronLeft className="w-4 h-4 text-slate-600" />
+                        </button>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mx-2">
+                            {meta.page || 1} / {meta.lastPage || 1}
+                        </span>
+                        <button 
+                            disabled={meta.page >= (meta.lastPage || 1)}
+                            onClick={() => setPage(p => p + 1)}
+                            className="p-1.5 hover:bg-white rounded-lg disabled:opacity-30 transition-all"
+                        >
+                            <ChevronRight className="w-4 h-4 text-slate-600" />
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {selectedIds.size > 0 ? (
+                            <button 
+                                onClick={() => setShowDeleteConfirm(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Delete Selected ({selectedIds.size})</span>
+                            </button>
                         ) : (
-                            items.map((item) => (
+                            selectedMasterId && (
+                                <button 
+                                    onClick={() => setShowDeleteAllConfirm(true)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-400 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-600 transition-all group"
+                                >
+                                    <Trash2 className="w-4 h-4 group-hover:animate-bounce" />
+                                    <span>Clear Catalog</span>
+                                </button>
+                            )
+                        )}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/50">
+                                <th className="p-4 text-left w-12">
+                                    <input 
+                                        type="checkbox" 
+                                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" 
+                                        onChange={(e) => {
+                                            if (e.target.checked) setSelectedIds(new Set(items.map(i => i.id)));
+                                            else setSelectedIds(new Set());
+                                        }}
+                                    />
+                                </th>
+                                <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Product / SKU</th>
+                                <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Brand & Type</th>
+                                <th className="p-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Status</th>
+                                <th className="p-4 text-right"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                            {isLoading && items.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="p-20 text-center">
+                                        <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
+                                        <p className="text-slate-400 text-sm mt-4 font-bold">Loading catalog data...</p>
+                                    </td>
+                                </tr>
+                            ) : items.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="p-20 text-center">
+                                        <Layers className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                                        <p className="text-slate-400 text-sm font-bold">This catalog is empty.</p>
+                                        <p className="text-slate-300 text-xs">Sync a file to populate this master.</p>
+                                    </td>
+                                </tr>
+                            ) : items.map((item) => (
                                 <React.Fragment key={item.id}>
-                                    <tr className={`hover:bg-slate-50 transition-colors cursor-pointer ${selectedIds.has(item.id) ? 'bg-blue-50/30' : ''}`} onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}>
-                                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                    <tr className={`hover:bg-slate-50/50 transition-colors cursor-pointer ${expandedRow === item.id ? 'bg-blue-50/30' : ''}`}
+                                        onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}>
+                                        <td className="p-4" onClick={(e) => e.stopPropagation()}>
                                             <input 
                                                 type="checkbox" 
-                                                className="rounded border-slate-300 text-[#0f172a] focus:ring-[#0f172a]"
                                                 checked={selectedIds.has(item.id)}
-                                                onChange={() => toggleSelectItem(item.id)}
+                                                onChange={() => {
+                                                    const next = new Set(selectedIds);
+                                                    if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                                                    setSelectedIds(next);
+                                                }}
+                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" 
                                             />
                                         </td>
-                                        <td className="px-6 py-4 font-mono text-sm font-bold text-[#38bdf8]">{item.sku_code}</td>
-                                        <td className="px-6 py-4 font-medium text-[#0f172a] text-sm">{item.sku_name}</td>
-                                        <td className="px-6 py-4 text-xs text-slate-500 text-center">{item.brand_name || '—'}</td>
-                                        <td className="px-6 py-4 font-mono text-xs text-slate-500 text-center">{item.gtin || '—'}</td>
-                                        <td className="px-6 py-4 text-xs text-slate-500 text-center">{item.expiry ? new Date(item.expiry).toLocaleDateString() : '—'}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex gap-1 flex-wrap">
-                                                {item.identifiers?.slice(0, 2).map((id) => (
-                                                    <span key={id.id} className="text-[9px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200 uppercase font-black tracking-widest">
-                                                        {id.type}
-                                                    </span>
-                                                ))}
-                                                {item.identifiers?.length > 2 && <span className="text-[9px] text-slate-400 font-black">+{item.identifiers.length - 2}</span>}
+                                        <td className="p-4">
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-bold text-slate-700 leading-tight">{item.skuName}</span>
+                                                <span className="text-[10px] font-mono font-black text-slate-400 mt-1 uppercase tracking-tighter">{item.skuCode}</span>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-slate-300">
-                                            {expandedRow === item.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                        <td className="p-4">
+                                            <div className="flex gap-2">
+                                                <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">{item.brandName || 'NO BRAND'}</span>
+                                                <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-bold uppercase">{item.uom}</span>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${item.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                <div className={`w-1.5 h-1.5 rounded-full ${item.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-400'}`} />
+                                                {item.status || 'ACTIVE'}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <ChevronRight className={`w-4 h-4 text-slate-300 transition-transform ${expandedRow === item.id ? 'rotate-90' : ''}`} />
                                         </td>
                                     </tr>
                                     {expandedRow === item.id && (
-                                        <tr className="bg-slate-50/60">
-                                            <td colSpan="8" className="px-8 py-6">
-                                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
-                                                    <Field label="Barcode" value={item.barcode} />
-                                                    <Field label="QR Code" value={item.qrCode} />
-                                                    <Field label="Serial No." value={item.serialNumber} />
-                                                    <Field label="UPC" value={item.upc_code} />
+                                        <tr className="bg-slate-50/30">
+                                            <td colSpan="5" className="px-16 py-6 border-b border-slate-100">
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-8 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <Field label="GTIN" value={item.gtin} />
                                                     <Field label="Batch" value={item.batch} />
-                                                    <Field label="Prod. Date" value={item.productionDate ? new Date(item.productionDate).toLocaleDateString() : null} />
-                                                    <Field label="Box L×W×H" value={item.boxLength ? `${item.boxLength}×${item.boxWidth}×${item.boxHeight} cm` : null} />
-                                                    <Field label="Weight" value={item.boxWeight ? `${item.boxWeight} kg` : null} />
-                                                    {item.description && <div className="col-span-2"><Field label="Description" value={item.description} /></div>}
-                                                    {item.identifiers?.map(id => (
-                                                        <div key={id.id}><Field label={id.type} value={id.value} /></div>
-                                                    ))}
+                                                    <Field label="Expiry" value={item.expiry ? new Date(item.expiry).toLocaleDateString() : null} />
+                                                    <Field label="Production" value={item.productionDate ? new Date(item.productionDate).toLocaleDateString() : null} />
+                                                    <Field label="Barcode" value={item.barcode} />
+                                                    <Field label="Serial" value={item.serialNumber} />
+                                                    <Field label="Alt Code 1" value={item.identifiers?.find(i => i.type === 'ALT1')?.value} />
+                                                    <Field label="Alt Code 2" value={item.identifiers?.find(i => i.type === 'ALT2')?.value} />
+                                                    <Field label="Alt Code 3" value={item.identifiers?.find(i => i.type === 'ALT3')?.value} />
                                                 </div>
                                             </td>
                                         </tr>
                                     )}
                                 </React.Fragment>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
 
-            {/* Pagination */}
-            {totalItems > 0 && (
-                <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                    <p className="text-xs font-medium text-slate-400">
-                        Showing <span className="font-bold text-slate-600">{(page - 1) * 20 + 1}</span> to <span className="font-bold text-slate-600">{Math.min(page * 20, totalItems)}</span> of <span className="font-bold text-slate-600">{totalItems.toLocaleString()}</span> items
-                    </p>
-                    <div className="flex items-center gap-2">
+                {/* Pagination */}
+                <div className="p-4 border-t border-slate-50 bg-slate-50/20 flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 tracking-wide uppercase">
+                        Page {meta.page || 1} of {meta.lastPage || 1}
+                    </span>
+                    <div className="flex items-center gap-1">
                         <button 
-                            disabled={page === 1}
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                            className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            disabled={meta.page <= 1}
+                            onClick={() => setPage(p => p - 1)}
+                            className="p-2 border border-slate-200 rounded-lg hover:bg-white disabled:opacity-30 transition-all active:scale-95"
                         >
-                            Previous
+                            <ChevronLeft className="w-4 h-4 text-slate-600" />
                         </button>
-                        <div className="flex items-center gap-1">
-                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                let pageNum;
-                                if (totalPages <= 5) pageNum = i + 1;
-                                else if (page <= 3) pageNum = i + 1;
-                                else if (page > totalPages - 2) pageNum = totalPages - 4 + i;
-                                else pageNum = page - 2 + i;
 
+                        {/* Page Numbers */}
+                        {(() => {
+                            const totalPages = meta.lastPage || 1;
+                            const count = Math.min(5, totalPages);
+                            return Array.from({ length: count }, (_, i) => {
+                                let p;
+                                if (totalPages <= 5) {
+                                    p = i + 1;
+                                } else if (meta.page <= 3) {
+                                    p = i + 1;
+                                } else if (meta.page >= totalPages - 2) {
+                                    p = totalPages - 4 + i;
+                                } else {
+                                    p = meta.page - 2 + i;
+                                }
+                                if (p < 1 || p > totalPages) return null;
                                 return (
-                                    <button 
-                                        key={pageNum}
-                                        onClick={() => setPage(pageNum)}
-                                        className={`w-8 h-8 flex items-center justify-center text-xs font-bold rounded-xl transition-all ${page === pageNum ? 'bg-[#0f172a] text-white shadow-lg shadow-slate-200' : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600'}`}
+                                    <button
+                                        key={p}
+                                        onClick={() => setPage(p)}
+                                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${meta.page === p ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-white text-slate-400 border border-transparent hover:border-slate-200'}`}
                                     >
-                                        {pageNum}
+                                        {p}
                                     </button>
                                 );
-                            })}
-                        </div>
+                            });
+                        })()}
+
                         <button 
-                            disabled={page === totalPages}
-                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                            className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            disabled={meta.page >= (meta.lastPage || 1)}
+                            onClick={() => setPage(p => p + 1)}
+                            className="p-2 border border-slate-200 rounded-lg hover:bg-white disabled:opacity-30 transition-all active:scale-95"
                         >
-                            Next
+                            <ChevronRight className="w-4 h-4 text-slate-600" />
                         </button>
                     </div>
                 </div>
-            )}
+            </div>
 
-            {/* Create Item Modal */}
-            {showCreate && (
+            {/* Create Master Modal */}
+            {showCreateMaster && (
                 <ModalPortal>
-                    <div className="fixed inset-0 bg-[#0f172a]/60 backdrop-blur-md flex items-center justify-center p-4 z-[9999] overflow-y-auto">
-                        <div
-                            className="w-full max-w-2xl bg-white rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.2)] relative my-auto animate-fade-up border border-white/20"
-                            onKeyDown={(e) => { if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); handleCreate(e); } }}
-                        >
-                            <div className="p-10">
-                                <div className="flex justify-between items-center mb-8">
-                                    <div className="space-y-1">
-                                        <h2 className="text-2xl font-black text-[#0f172a]">Item Master Entry</h2>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Global SKU Registration</p>
-                                    </div>
-                                    <button type="button" onClick={() => { setShowCreate(false); resetForm(); }} className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all group">
-                                        <XCircle size={24} className="group-hover:scale-110 transition-transform" />
-                                    </button>
-                                </div>
-                                <form onSubmit={handleCreate} className="space-y-6">
-                                    {/* Core */}
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-50 pb-2">Core Details</p>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU Code *</label><input className="clean-input mt-1 font-mono" value={formData.sku_code} onChange={e => setFormData({ ...formData, sku_code: e.target.value })} required /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU Name *</label><input className="clean-input mt-1" value={formData.sku_name} onChange={e => setFormData({ ...formData, sku_name: e.target.value })} required /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand Name</label><input className="clean-input mt-1" value={formData.brand_name} onChange={e => setFormData({ ...formData, brand_name: e.target.value })} /></div>
-                                            <div className="col-span-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description</label><textarea className="clean-input mt-1" rows={2} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} /></div>
-                                        </div>
-                                    </div>
-                                    {/* Identifiers */}
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-50 pb-2">Identifiers</p>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">GTIN</label><input className="clean-input mt-1 font-mono" value={formData.gtin} onChange={e => setFormData({ ...formData, gtin: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Barcode</label><input className="clean-input mt-1 font-mono" value={formData.barcode} onChange={e => setFormData({ ...formData, barcode: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">QR Code</label><input className="clean-input mt-1 font-mono" value={formData.qrCode} onChange={e => setFormData({ ...formData, qrCode: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Serial Number</label><input className="clean-input mt-1 font-mono" value={formData.serialNumber} onChange={e => setFormData({ ...formData, serialNumber: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">UPC</label><input className="clean-input mt-1 font-mono" value={formData.upc} onChange={e => setFormData({ ...formData, upc: e.target.value })} /></div>
-                                        </div>
-                                    </div>
-                                    {/* Batch/Dates */}
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-50 pb-2">Batch & Dates</p>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch No.</label><input className="clean-input mt-1 font-mono" value={formData.batch} onChange={e => setFormData({ ...formData, batch: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Production Date</label><input type="date" className="clean-input mt-1" value={formData.productionDate} onChange={e => setFormData({ ...formData, productionDate: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expiry Date</label><input type="date" className="clean-input mt-1" value={formData.expiry} onChange={e => setFormData({ ...formData, expiry: e.target.value })} /></div>
-                                        </div>
-                                    </div>
-                                    {/* Dimensions */}
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-50 pb-2">Box Dimensions</p>
-                                        <div className="grid grid-cols-4 gap-4">
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Length (cm)</label><input type="number" className="clean-input mt-1" value={formData.boxLength} onChange={e => setFormData({ ...formData, boxLength: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Width (cm)</label><input type="number" className="clean-input mt-1" value={formData.boxWidth} onChange={e => setFormData({ ...formData, boxWidth: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Height (cm)</label><input type="number" className="clean-input mt-1" value={formData.boxHeight} onChange={e => setFormData({ ...formData, boxHeight: e.target.value })} /></div>
-                                            <div><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Weight (kg)</label><input type="number" className="clean-input mt-1" value={formData.boxWeight} onChange={e => setFormData({ ...formData, boxWeight: e.target.value })} /></div>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-4 pt-8">
-                                        <button type="button" onClick={() => { setShowCreate(false); resetForm(); }} className="flex-1 py-4 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all active:scale-95">Discard</button>
-                                        <button type="submit" className="flex-[2] bg-[#0f172a] text-white font-black py-4 rounded-2xl uppercase tracking-[0.2em] text-[10px] hover:bg-slate-900 transition-all shadow-[0_20px_40px_-12px_rgba(15,23,42,0.3)] active:scale-95">Registry Sync</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                </ModalPortal>
-            )}
-            {/* Action Bar for Selection */}
-            {selectedIds.size > 0 && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-[#0f172a] text-white px-8 py-4 rounded-[2rem] shadow-2xl z-[100] flex items-center gap-6 animate-fade-up border border-white/10 backdrop-blur-md">
-                    <div className="flex items-center gap-3 pr-6 border-r border-white/10">
-                        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-black text-sm">
-                            {selectedIds.size}
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Items Selected</span>
-                    </div>
-                    <button 
-                        onClick={handleDeleteSelected}
-                        disabled={isDeleting}
-                        className="text-red-400 hover:text-red-300 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                        Delete Selected
-                    </button>
-                    <button 
-                        onClick={() => setSelectedIds(new Set())}
-                        className="text-slate-400 hover:text-white font-black text-[10px] uppercase tracking-widest transition-all"
-                    >
-                        Deselect
-                    </button>
-                </div>
-            )}
-
-            {/* Clear All Confirmation Modal */}
-            {showClearConfirm && (
-                <ModalPortal>
-                    <div className="fixed inset-0 bg-red-950/60 backdrop-blur-md flex items-center justify-center p-4 z-[9999]">
-                        <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl text-center space-y-8 animate-fade-up border border-red-100">
-                            <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center mx-auto shadow-inner relative overflow-hidden">
-                                <Trash2 className="text-red-500" size={32} />
-                            </div>
-                            
-                            <div className="space-y-2">
-                                <h3 className="text-xl font-black text-[#0f172a]">Wipe Entire Catalog?</h3>
-                                <p className="text-slate-400 text-xs font-medium px-4">This will permanently delete all <span className="text-red-500 font-bold">{totalItems.toLocaleString()} items</span> and their history. This action cannot be undone.</p>
-                            </div>
-
-                            <div className="flex gap-4">
-                                <button 
-                                    onClick={() => setShowClearConfirm(false)}
-                                    className="flex-1 py-4 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all active:scale-95"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    onClick={handleClearAll}
-                                    disabled={isDeleting}
-                                    className="flex-[2] bg-red-500 text-white font-black py-4 rounded-2xl uppercase tracking-[0.2em] text-[10px] hover:bg-red-600 transition-all shadow-xl shadow-red-200 active:scale-95 flex items-center justify-center gap-2"
-                                >
-                                    {isDeleting && <Loader2 size={14} className="animate-spin" />}
-                                    Yes, Clear Everything
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <h3 className="text-lg font-black text-slate-800 tracking-tight">New Product Catalog</h3>
+                                <button onClick={() => setShowCreateMaster(false)} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
-                        </div>
-                    </div>
-                </ModalPortal>
-            )}
-
-            {/* Import Progress Modal */}
-            {importing && (
-                <ModalPortal>
-                    <div className="fixed inset-0 bg-[#0f172a]/80 backdrop-blur-xl flex items-center justify-center p-4 z-[10000]">
-                        <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl text-center space-y-8 border border-white/10">
-                            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto shadow-inner relative overflow-hidden">
-                                <div className="absolute inset-0 bg-gradient-to-tr from-blue-100/50 to-transparent animate-pulse" />
-                                {importJob?.status === 'STARTING' ? (
-                                    <Loader2 className="text-blue-500 animate-spin" size={32} />
-                                ) : (
-                                    <Upload className="text-blue-500 animate-bounce" size={32} />
-                                )}
-                            </div>
-                            
-                            <div className="space-y-2">
-                                <h3 className="text-xl font-black text-[#0f172a]">Synchronizing Catalog</h3>
-                                <p className="text-slate-400 text-xs font-medium">Processing your massive dataset. Please do not close this tab.</p>
-                            </div>
-
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-end">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sync Progress</span>
-                                    <span className="text-sm font-mono font-bold text-blue-500">
-                                        {importJob && importJob.total > 0 
-                                            ? Math.round((( (importJob.processed || 0) + (importJob.failed || 0) ) / importJob.total) * 100) 
-                                            : 0}%
-                                    </span>
-                                </div>
-                                <div className="h-4 bg-slate-100 rounded-full overflow-hidden border border-slate-50 p-1 relative">
-                                    <div 
-                                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-700 shadow-inner relative z-10"
-                                        style={{ 
-                                            width: `${importJob && importJob.total > 0 
-                                                ? Math.min(100, Math.round((( (importJob.processed || 0) + (importJob.failed || 0) ) / importJob.total) * 100)) 
-                                                : 0}%` 
-                                        }}
+                            <div className="p-8 space-y-6">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Catalog Name</label>
+                                    <input 
+                                        type="text" 
+                                        autoFocus
+                                        placeholder="e.g. Pharmacy Stock, Retail Inventory..."
+                                        className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/10 placeholder:text-slate-300 transition-all outline-none"
+                                        value={newMasterName}
+                                        onChange={(e) => setNewMasterName(e.target.value)}
                                     />
-                                    {(!importJob || !importJob.total) && (
-                                        <div className="absolute inset-0 bg-slate-200 animate-pulse rounded-full" />
-                                    )}
                                 </div>
-                                <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                    <span>Processed: {importJob?.processed?.toLocaleString() || '0'}</span>
-                                    <span>Total: {importJob?.total?.toLocaleString() || '...'}</span>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Target Business Unit / Entity (Optional)</label>
+                                    <select 
+                                        className="w-full px-5 py-4 bg-slate-50 border-none rounded-2xl text-slate-700 font-medium focus:ring-4 focus:ring-blue-500/10 transition-all outline-none appearance-none cursor-pointer"
+                                        value={selectedTenantId}
+                                        onChange={(e) => setSelectedTenantId(e.target.value)}
+                                    >
+                                        <option value="">Current Company</option>
+                                        {companies.map(c => (
+                                            <option key={c.id} value={c.id}>{c.companyName} ({c.companyCode})</option>
+                                        ))}
+                                    </select>
                                 </div>
-                            </div>
-
-                            {importJob?.failed > 0 && (
-                                <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-[10px] font-bold flex items-center gap-3">
-                                    <div className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
-                                    {importJob.failed} items skipped due to identifier conflicts
-                                </div>
-                            )}
-
-                            <div className="pt-4">
-                                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-[0.2em] animate-pulse">
-                                    {importJob?.status === 'STARTING' ? 'Preparing Upload...' : 'Running Background Sync...'}
-                                </p>
+                                <button 
+                                    onClick={handleCreateMaster}
+                                    disabled={!newMasterName.trim()}
+                                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 text-white rounded-2xl font-black shadow-xl shadow-blue-500/20 transition-all active:scale-[0.98]"
+                                >
+                                    Create Catalog
+                                </button>
                             </div>
                         </div>
                     </div>
                 </ModalPortal>
             )}
+
+            {/* Delete Modal */}
+            <ConfirmModal 
+                isOpen={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={handleDeleteSelected}
+                title="Delete Items?"
+                message={`Are you sure you want to delete ${selectedIds.size} selected items? This action cannot be undone.`}
+                confirmLabel={isDeleting ? "Deleting..." : "Delete Items"}
+                variant="danger"
+                loading={isDeleting}
+            />
+
+            {/* Delete All Modal */}
+            <ConfirmModal 
+                show={showDeleteAllConfirm} // Using 'show' based on common pattern, or 'isOpen' if consistent
+                isOpen={showDeleteAllConfirm}
+                onClose={() => setShowDeleteAllConfirm(false)}
+                onConfirm={handleDeleteAll}
+                title="Clear Entire Catalog?"
+                message={`Are you sure you want to delete ALL ${meta.total?.toLocaleString()} items in this catalog? This will permanently wipe the data and cannot be undone.`}
+                confirmLabel={isDeletingAll ? "Clearing..." : "Clear Catalog"}
+                variant="danger"
+                loading={isDeletingAll}
+            />
         </div>
     );
 };

@@ -20,220 +20,288 @@ enum LocationType {
   BIN
 }
 
+enum AuditStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  STARTING
+}
+
+enum SectionStatus {
+  OPEN
+  LOCKED
+  COMPLETED
+}
+
 model Tenant {
-  id           String   @id @default(uuid()) @db.Uuid
-  company_name String
-  company_code String   @unique
-  metadata     Json?    @default("{}")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  deletedAt    DateTime?
-  audits       Audit[]
-  branches     Branch[]
-  brands       Brand[]
-  items        Item[]
-  roles        Role[]
-  users        User[]
+  id          String    @id @default(uuid()) @db.Uuid
+  companyName String    @map("company_name")
+  companyCode String    @unique @map("company_code")
+  metadata    Json?     @default("{}")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  audits      Audit[]
+  branches    Branch[]
+  brands      Brand[]
+  items       Item[]
+  roles       Role[]
+  users       User[]
+  itemMasters ItemMaster[]
+  importJobs  ImportJob[]
+
+  @@map("tenants")
+}
+
+model ItemMaster {
+  id        String      @id @default(uuid()) @db.Uuid
+  name      String
+  tenantId  String      @map("tenant_id") @db.Uuid
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  deletedAt DateTime?   @map("deleted_at")
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  brandId     String?     @map("brand_id") @db.Uuid
+  brand       Brand?       @relation(fields: [brandId], references: [id])
+  items     Item[]
+  audits    Audit[]
+  importJobs ImportJob[]
+
+  @@unique([tenantId, name])
+  @@map("item_masters")
 }
 
 model Brand {
   id             String    @id @default(uuid()) @db.Uuid
-  brand_name     String
-  brand_code     String    @unique
+  brandName      String    @map("brand_name")
+  brandCode      String    @unique @map("brand_code")
   metadata       Json?     @default("{}")
   profileUrl     String?
   profileContent String?
-  tenantId       String    @db.Uuid
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  tenantId       String    @map("tenant_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
   branches       Branch[]
   items          Item[]
+  itemMasters    ItemMaster[]
   tenant         Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@map("brands")
 }
 
 model Branch {
-  id                   String             @id @default(uuid()) @db.Uuid
-  branch_name          String
-  branch_code          String             @unique
-  type                 BranchType         @default(RETAIL)
-  status               String             @default("ACTIVE") // ACTIVE, CLOSED
-  poc                  String?
-  branch_location      String?            // Physical address (from image)
-  resources_assigned   Int?               @default(0)
-  counters_count       Int?               @default(0)
-  shelves_count        Int?               @default(0)
-  gondolas_count       Int?               @default(0)
-  area_manager_name    String?
-  business_entity_type String?
-  invoice_to           String?            // Invoice To Be Issued To
-  count_schedule_date  DateTime?
-  metadata             Json?              @default("{}")
-  parentId             String?            @db.Uuid
-  brandId              String             @db.Uuid
-  tenantId             String             @db.Uuid
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
-  deletedAt            DateTime?
-  audits               Audit[]
-  brand                Brand              @relation(fields: [brandId], references: [id])
-  tenant               Tenant             @relation(fields: [tenantId], references: [id])
-  parent               Branch?            @relation("BranchHierarchy", fields: [parentId], references: [id])
-  children             Branch[]           @relation("BranchHierarchy")
-  locations            Location[]
-  userAccess           UserBranchAccess[]
+  id                 String             @id @default(uuid()) @db.Uuid
+  branchName         String             @map("branch_name")
+  branchCode         String             @unique @map("branch_code")
+  type               BranchType         @default(RETAIL)
+  status             String             @default("ACTIVE") // ACTIVE, CLOSED
+  poc                String?
+  branchLocation     String?            @map("branch_location")
+  resourcesAssigned  Int?               @default(0) @map("resources_assigned")
+  countersCount      Int?               @default(0) @map("counters_count")
+  shelvesCount       Int?               @default(0) @map("shelves_count")
+  gondolasCount      Int?               @default(0) @map("gondolas_count")
+  areaManagerName    String?            @map("area_manager_name")
+  businessEntityType String?            @map("business_entity_type")
+  invoiceTo          String?            @map("invoice_to")
+  countScheduleDate  DateTime?          @map("count_schedule_date")
+  metadata           Json?              @default("{}")
+  parentId           String?            @db.Uuid
+  brandId            String             @map("brand_id") @db.Uuid
+  tenantId           String             @map("tenant_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  deletedAt          DateTime?          @map("deleted_at")
+  audits             Audit[]
+  brand              Brand              @relation(fields: [brandId], references: [id])
+  tenant             Tenant             @relation(fields: [tenantId], references: [id])
+  parent             Branch?            @relation("BranchHierarchy", fields: [parentId], references: [id])
+  children           Branch[]           @relation("BranchHierarchy")
+  locations          Location[]
+  userAccess         UserBranchAccess[]
+
+  @@map("branches")
 }
 
 model User {
-  id           String             @id @default(uuid()) @db.Uuid
-  email        String             @unique
-  password     String
-  firstName    String?
-  lastName     String?
-  tenantId     String             @db.Uuid
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  assignments  AuditAssignment[]
-  auditLogs    AuditLog[]
-  tenant       Tenant             @relation(fields: [tenantId], references: [id])
-  branchAccess UserBranchAccess[]
-  roles        UserRole[]
+  id               String             @id @default(uuid()) @db.Uuid
+  email            String             @unique
+  password         String
+  firstName        String?
+  lastName         String?
+  tenantId         String             @map("tenant_id") @db.Uuid
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  deletedAt        DateTime?          @map("deleted_at")
+  assignments      AuditAssignment[]
+  auditLogs        AuditLog[]
+  tenant           Tenant             @relation(fields: [tenantId], references: [id])
+  branchAccess     UserBranchAccess[]
+  roles            UserRole[]
   assignedSections AuditSection[]
-  clientSignoffs ClientSignoff[]
+  clientSignoffs   ClientSignoff[]
   internalSignoffs InternalSignoff[]
+
+  @@map("users")
 }
 
 model Role {
   id          String           @id @default(uuid()) @db.Uuid
   name        String
-  tenantId    String           @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
   tenant      Tenant           @relation(fields: [tenantId], references: [id])
   permissions RolePermission[]
   users       UserRole[]
 
   @@unique([name, tenantId])
+  @@map("roles")
 }
 
 model Permission {
   id    String           @id @default(uuid()) @db.Uuid
   name  String           @unique
   roles RolePermission[]
+
+  @@map("permissions")
 }
 
 model UserRole {
-  userId String @db.Uuid
-  roleId String @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
   role   Role   @relation(fields: [roleId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
 
   @@id([userId, roleId])
+  @@map("user_roles")
 }
 
 model RolePermission {
-  roleId       String     @db.Uuid
-  permissionId String     @db.Uuid
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
   permission   Permission @relation(fields: [permissionId], references: [id])
   role         Role       @relation(fields: [roleId], references: [id])
 
   @@id([roleId, permissionId])
+  @@map("role_permissions")
 }
 
 model UserBranchAccess {
-  userId   String @db.Uuid
-  branchId String @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
   branch   Branch @relation(fields: [branchId], references: [id])
   user     User   @relation(fields: [userId], references: [id])
 
   @@id([userId, branchId])
+  @@map("UserBranchAccess")
 }
 
 model Location {
   id            String         @id @default(uuid()) @db.Uuid
   code          String
-  qrValue       String
-  locationType  LocationType   @default(SHELF)
-  parent_id     String?        @db.Uuid
-  branchId      String         @db.Uuid
+  qrValue       String         @map("qr_value")
+  locationType  LocationType   @default(SHELF) @map("location_type")
+  parentId      String?        @map("parent_id") @db.Uuid
+  branchId      String         @map("branch_id") @db.Uuid
   metadata      Json?          @default("{}")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  deletedAt     DateTime?      @map("deleted_at")
   auditSections AuditSection[]
   branch        Branch         @relation(fields: [branchId], references: [id])
-  parent        Location?      @relation("Hierarchy", fields: [parent_id], references: [id])
+  parent        Location?      @relation("Hierarchy", fields: [parentId], references: [id])
   children      Location[]     @relation("Hierarchy")
 
   @@unique([branchId, code])
   @@unique([branchId, qrValue])
+  @@map("locations")
 }
 
 model Item {
-  id                 String             @id @default(uuid()) @db.Uuid
-  sku_code           String
-  sku_name           String
-  description        String?
-  client_sku_code    String?
-  quantity           Float?             @default(0)
-  size_dimensions    String?
-  status             String?            @default("ACTIVE")
-  uom                String?            @default("EA")
-  unit_cost_price    Float?             @default(0)
-  brand_name         String?
-  gtin               String?
-  batch              String?
-  expiry             DateTime?
-  productionDate     DateTime?
-  barcode            String?
-  qrCode             String?
-  serialNumber       String?
-  upc_code           String?
-  box_dimensions     Json?
-  metadata           Json?              @default("{}")
-  brandId            String?            @db.Uuid
-  tenantId           String             @db.Uuid
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  deletedAt          DateTime?
-  sohBaselines       AuditSohBaseline[]
-  countEvents        CountEvent[]
-  tenant             Tenant             @relation(fields: [tenantId], references: [id])
-  brand              Brand?             @relation(fields: [brandId], references: [id])
-  identifiers        ItemIdentifier[]
-  sectionTotals      SectionItemTotal[]
-  varianceTotals     VarianceTotal[]
+  id              String             @id @default(uuid()) @db.Uuid
+  skuCode         String             @map("sku_code")
+  skuName         String             @map("sku_name")
+  description     String?
+  clientSkuCode   String?            @map("client_sku_code")
+  quantity        Float?             @default(0)
+  sizeDimensions  String?            @map("size_dimensions")
+  status          String?            @default("ACTIVE")
+  uom             String?            @default("EA")
+  unitCostPrice   Float?             @default(0) @map("unit_cost_price")
+  brandName       String?            @map("brand_name")
+  gtin            String?
+  batch           String?
+  expiry          DateTime?
+  productionDate  DateTime?          @map("production_date")
+  barcode         String?
+  qrCode          String?            @map("qr_code")
+  serialNumber    String?            @map("serial_number")
+  upcCode         String?            @map("upc_code")
+  boxDimensions   Json?              @map("box_dimensions")
+  metadata        Json?              @default("{}")
+  brandId         String?            @map("brand_id") @db.Uuid
+  itemMasterId    String?            @map("item_master_id") @db.Uuid
+  tenantId        String             @map("tenant_id") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  deletedAt       DateTime?          @map("deleted_at")
+  sohBaselines    AuditSohBaseline[]
+  countEvents     CountEvent[]
+  tenant          Tenant             @relation(fields: [tenantId], references: [id])
+  itemMaster      ItemMaster?        @relation(fields: [itemMasterId], references: [id])
+  brand           Brand?             @relation(fields: [brandId], references: [id])
+  identifiers     ItemIdentifier[]
+  varianceTotals  VarianceTotal[]
+  sectionItemTotals SectionItemTotal[]
 
-  @@unique([tenantId, sku_code])
+  @@unique([tenantId, skuCode]) 
+  @@index([itemMasterId])
+  @@map("items")
 }
 
 model ItemIdentifier {
   id     String @id @default(uuid()) @db.Uuid
   type   String
   value  String 
-  itemId String @db.Uuid
+  itemId String @map("item_id") @db.Uuid
   item   Item   @relation(fields: [itemId], references: [id])
 
   @@index([value])
+  @@index([itemId])
+  @@map("item_identifiers")
 }
 
 model Audit {
   id                String             @id @default(uuid()) @db.Uuid
   name              String
-  status            String             @default("DRAFT")
-  audit_date_time   DateTime?
+  status            AuditStatus        @default(DRAFT)
+  auditDateTime     DateTime?          @map("audit_date_time")
   suggestedChanges  Json?
   transfersCleared  Boolean            @default(false)
   itemsArranged     Boolean            @default(false)
   internetApproved  Boolean            @default(false)
   acknowledgmentLog Json?
-  reminderStatus    String?            @default("NONE") // NONE, WEEK_PRIOR, DAY_PRIOR, BOTH
-  checklistAckAt    DateTime?
-  resolvedAt        DateTime?
-  pharmacistSigned  Boolean            @default(false)
-  tenantId          String             @db.Uuid
-  branchId          String             @db.Uuid
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  reminderStatus    String?            @default("NONE") @map("reminder_status")
+  checklistAckAt    DateTime?          @map("checklist_ack_at")
+  resolvedAt        DateTime?          @map("resolved_at")
+  pharmacistSigned  Boolean            @default(false) @map("pharmacist_signed")
+  tenantId          String             @map("tenant_id") @db.Uuid
+  branchId          String             @map("branch_id") @db.Uuid
+  itemMasterId      String?            @map("item_master_id") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  deletedAt         DateTime?          @map("deleted_at")
   branch            Branch             @relation(fields: [branchId], references: [id])
   tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  itemMaster        ItemMaster?        @relation(fields: [itemMasterId], references: [id])
   assignments       AuditAssignment[]
   logs              AuditLog[]
   sections          AuditSection[]
@@ -242,196 +310,231 @@ model Audit {
   clientSignoffs    ClientSignoff[]
   internalSignoffs  InternalSignoff[]
   notificationLogs  NotificationLog[]
+
+  @@map("audits")
 }
 
 model AuditSection {
   id             String             @id @default(uuid()) @db.Uuid
   auditId        String             @db.Uuid
   locationId     String             @db.Uuid
-  assignedUserId String?            @db.Uuid
-  status         String             @default("OPEN")
-  lockReason     String?
-  lockedBy       String?            @db.Uuid
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  assignedUserId String?            @map("assigned_user_id") @db.Uuid
+  status         SectionStatus      @default(OPEN)
+  lockReason     String?            @map("lock_reason")
+  lockedBy       String?            @map("locked_by") @db.Uuid
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  deletedAt      DateTime?          @map("deleted_at")
   audit          Audit              @relation(fields: [auditId], references: [id])
   location       Location           @relation(fields: [locationId], references: [id])
   assignedUser   User?              @relation(fields: [assignedUserId], references: [id])
   countEvents    CountEvent[]
   itemTotals     SectionItemTotal[]
+
+  @@unique([auditId, locationId])
+  @@map("audit_sections")
 }
 
 model AuditAssignment {
   id         String    @id @default(uuid()) @db.Uuid
-  auditId    String    @db.Uuid
-  userId     String    @db.Uuid
-  checkInAt  DateTime?
-  checkOutAt DateTime?
-  createdAt  DateTime  @default(now())
+  auditId    String    @map("audit_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  checkInAt  DateTime? @map("check_in_at")
+  checkOutAt DateTime? @map("check_out_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
   audit      Audit     @relation(fields: [auditId], references: [id])
   user       User      @relation(fields: [userId], references: [id])
+
+  @@map("audit_assignments")
 }
 
 model AuditSohBaseline {
-  id        String   @id @default(uuid()) @db.Uuid
-  auditId   String   @db.Uuid
-  itemId    String   @db.Uuid
+  id        String    @id @default(uuid()) @db.Uuid
+  auditId   String    @map("audit_id") @db.Uuid
+  itemId    String    @map("item_id") @db.Uuid
   quantity  Float
-  createdAt DateTime @default(now())
-  audit     Audit    @relation(fields: [auditId], references: [id])
-  item      Item     @relation(fields: [itemId], references: [id])
+  createdAt DateTime  @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+  audit     Audit     @relation(fields: [auditId], references: [id])
+  item      Item      @relation(fields: [itemId], references: [id])
 
   @@unique([auditId, itemId])
+  @@map("audit_soh_baselines")
 }
 
 model CountEvent {
   id                String       @id @default(uuid()) @db.Uuid
-  client_event_id   String       @unique
-  tenantId          String       @db.Uuid
-  sectionId         String       @db.Uuid
-  itemId            String       @db.Uuid
-  userId            String       @db.Uuid
+  clientEventId     String       @unique @map("client_event_id")
+  tenantId          String       @map("tenant_id") @db.Uuid
+  sectionId         String       @map("section_id") @db.Uuid
+  itemId            String       @map("item_id") @db.Uuid
+  userId            String       @map("user_id") @db.Uuid
   quantity          Float
-  looseQuantity     Float?       @default(0) // Points for pharmacy
-  isExternalApiData Boolean      @default(false) // Tatmeen integration
-  dataSource        String?      @default("MANUAL") // TATMEEN, MANUAL, MASTER
-  scannedAt         DateTime
-  durationSeconds   Int?         @default(0)
+  looseQuantity     Float?       @default(0) @map("loose_quantity")
+  isExternalApiData Boolean      @default(false) @map("is_external_api_data")
+  dataSource        String?      @default("MANUAL") @map("data_source")
+  scannedAt         DateTime     @map("scanned_at")
+  durationSeconds   Int?         @default(0) @map("duration_seconds")
   metadata          Json?        @default("{}")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  deletedAt         DateTime?    @map("deleted_at")
   item              Item         @relation(fields: [itemId], references: [id])
   section           AuditSection @relation(fields: [sectionId], references: [id])
+
+  @@index([sectionId, itemId])
+  @@map("count_events")
 }
 
 model SectionItemTotal {
   id        String       @id @default(uuid()) @db.Uuid
-  sectionId String       @db.Uuid
-  itemId    String       @db.Uuid
+  sectionId String       @map("section_id") @db.Uuid
+  itemId    String       @map("item_id") @db.Uuid
   total     Float
   item      Item         @relation(fields: [itemId], references: [id])
   section   AuditSection @relation(fields: [sectionId], references: [id])
 
   @@unique([sectionId, itemId])
+  @@map("section_item_totals")
 }
 
 model VarianceTotal {
   id                String  @id @default(uuid()) @db.Uuid
-  auditId           String  @db.Uuid
-  itemId            String  @db.Uuid
-  sohQuantity       Float
-  countedQuantity   Float
+  auditId           String  @map("audit_id") @db.Uuid
+  itemId            String  @map("item_id") @db.Uuid
+  sohQuantity       Float   @map("soh_quantity")
+  countedQuantity   Float   @map("counted_quantity")
   variance          Float
-  adjustmentQty     Float?  @default(0)
-  isResolved        Boolean @default(false)
-  pharmacistRemarks String?
+  adjustmentQty     Float?  @default(0) @map("adjustment_qty")
+  isResolved        Boolean @default(false) @map("is_resolved")
+  pharmacistRemarks String? @map("pharmacist_remarks")
   item              Item    @relation(fields: [itemId], references: [id])
 
   @@unique([auditId, itemId])
+  @@map("variance_totals")
 }
 
 model DiscrepancyCase {
   id        String              @id @default(uuid()) @db.Uuid
-  auditId   String              @db.Uuid
-  itemId    String              @db.Uuid
+  auditId   String              @map("audit_id") @db.Uuid
+  itemId    String              @map("item_id") @db.Uuid
   status    String              @default("OPEN")
-  createdAt DateTime            @default(now())
+  createdAt DateTime            @default(now()) @map("created_at")
   actions   DiscrepancyAction[]
 
   @@unique([auditId, itemId])
+  @@map("discrepancy_cases")
 }
 
 model DiscrepancyAction {
   id        String          @id @default(uuid()) @db.Uuid
-  caseId    String          @db.Uuid
+  caseId    String          @map("case_id") @db.Uuid
   type      String
   notes     String?
-  createdAt DateTime        @default(now())
+  createdAt DateTime        @default(now()) @map("created_at")
   case      DiscrepancyCase @relation(fields: [caseId], references: [id])
+
+  @@map("discrepancy_actions")
 }
 
 model Report {
   id        String   @id @default(uuid()) @db.Uuid
-  auditId   String   @db.Uuid
+  auditId   String   @map("audit_id") @db.Uuid
   type      String
   data      Json
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
   audit     Audit    @relation(fields: [auditId], references: [id])
+
+  @@map("reports")
 }
 
 model ClientSignoff {
   id               String   @id @default(uuid()) @db.Uuid
-  auditId          String   @db.Uuid
-  userId           String   @db.Uuid
+  auditId          String   @map("audit_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
   rating           Int?
-  varianceAck      Boolean  @default(false)
+  varianceAck      Boolean  @default(false) @map("variance_ack")
   signature        String
-  checklistAnswers Json?
-  createdAt        DateTime @default(now())
+  checklistAnswers Json?    @map("checklist_answers")
+  createdAt        DateTime @default(now()) @map("created_at")
   audit            Audit    @relation(fields: [auditId], references: [id])
   user             User     @relation(fields: [userId], references: [id])
 
   @@unique([auditId])
+  @@map("client_signoffs")
 }
 
 model InternalSignoff {
   id               String   @id @default(uuid()) @db.Uuid
-  auditId          String   @db.Uuid
-  userId           String   @db.Uuid
-  grnStatus        Boolean  @default(false)
+  auditId          String   @map("audit_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  grnStatus        Boolean  @default(false) @map("grn_status")
   notes            String?
   signature        String
-  teamSignature    String?
-  checklistAnswers Json?
-  createdAt        DateTime @default(now())
+  teamSignature    String?  @map("team_signature")
+  checklistAnswers Json?    @map("checklist_answers")
+  createdAt        DateTime @default(now()) @map("created_at")
   audit            Audit    @relation(fields: [auditId], references: [id])
   user             User     @relation(fields: [userId], references: [id])
 
   @@unique([auditId])
+  @@map("internal_signoffs")
 }
 
 model AuditLog {
   id        String   @id @default(uuid()) @db.Uuid
-  auditId   String?  @db.Uuid
-  userId    String?  @db.Uuid
+  auditId   String?  @map("audit_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
   action    String
   entity    String?
-  entityId  String?
+  entityId  String?  @map("entity_id")
   metadata  Json?
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
   audit     Audit?   @relation(fields: [auditId], references: [id])
   user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
 }
 
 model NotificationLog {
   id        String   @id @default(uuid()) @db.Uuid
-  auditId   String   @db.Uuid
+  auditId   String   @map("audit_id") @db.Uuid
   type      String   // WEEK_PRIOR, DAY_PRIOR, CUSTOM
   recipient String
   content   String
-  sentAt    DateTime @default(now())
+  sentAt    DateTime @default(now()) @map("sent_at")
   audit     Audit    @relation(fields: [auditId], references: [id])
+
+  @@map("notification_logs")
 }
 
 model ErrorLog {
   id        String   @id @default(uuid()) @db.Uuid
-  auditId   String   @db.Uuid
-  itemId    String   @db.Uuid
-  userId    String   @db.Uuid
+  auditId   String   @map("audit_id") @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
   category  String   // COUNT_ERROR, SYNC_ERROR, SCAN_ERROR
   message   String
   metadata  Json?    @default("{}")
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("error_logs")
 }
 
 model ImportJob {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid
-  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
-  total       Int      @default(0)
-  processed   Int      @default(0)
-  failed      Int      @default(0)
-  message     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String      @id @default(uuid()) @db.Uuid
+  tenantId     String      @map("tenant_id") @db.Uuid
+  itemMasterId String?     @map("item_master_id") @db.Uuid
+  status       JobStatus   @default(PENDING)
+  total        Int         @default(0)
+  processed    Int         @default(0)
+  failed       Int         @default(0)
+  message      String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  deletedAt    DateTime?   @map("deleted_at")
+  tenant       Tenant      @relation(fields: [tenantId], references: [id])
+  itemMaster   ItemMaster? @relation(fields: [itemMasterId], references: [id])
 
   @@index([tenantId])
+  @@map("import_jobs")
 }

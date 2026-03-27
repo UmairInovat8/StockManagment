@@ -1,0 +1,10 @@
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42846`. Message: `ERROR: cannot cast type bigint to uuid`
+    at Un.handleRequestError (D:\React\Applications\StockCount\apps\api\dist\generated\prisma-client\runtime\library.js:121:7447)
+    at Un.handleAndLogRequestError (D:\React\Applications\StockCount\apps\api\dist\generated\prisma-client\runtime\library.js:121:6771)
+    at Un.request (D:\React\Applications\StockCount\apps\api\dist\generated\prisma-client\runtime\library.js:121:6478)
+    at async l (D:\React\Applications\StockCount\apps\api\dist\generated\prisma-client\runtime\library.js:130:9644)
+    at async ItemsService.runBulkSync (D:\React\Applications\StockCount\apps\api\src\items\items.service.ts:247:52)

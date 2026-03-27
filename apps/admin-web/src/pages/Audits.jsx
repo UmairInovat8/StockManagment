@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Calendar, Clock, MapPin, ClipboardCheck, ChevronRight, LayoutGrid, X, XCircle } from 'lucide-react';
 import ModalPortal from '../components/ModalPortal';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const StatusBadge = ({ status }) => {
     const colors = {
@@ -29,17 +29,21 @@ const Audits = () => {
     const [formData, setFormData] = useState({
         name: '',
         branchId: '',
-        audit_date_time: '',
+        itemMasterId: '',
+        auditDateTime: '',
     });
+    const [masters, setMasters] = useState([]);
 
     const fetchData = async () => {
         try {
-            const [auditsRes, branchesRes] = await Promise.all([
-                axios.get(`${API}/audits`),
-                axios.get(`${API}/branches`)
+            const [auditsRes, branchesRes, mastersRes] = await Promise.all([
+                api.get('/audits'),
+                api.get('/branches'),
+                api.get('/items/masters')
             ]);
             setAudits(auditsRes.data);
             setBranches(branchesRes.data);
+            setMasters(mastersRes.data);
         } catch (e) {
             console.error('Error fetching audits/branches', e);
         } finally {
@@ -49,12 +53,12 @@ const Audits = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    const resetForm = () => setFormData({ name: '', branchId: '', audit_date_time: '' });
+    const resetForm = () => setFormData({ name: '', branchId: '', auditDateTime: '' });
 
     const handleCreate = async (e) => {
         e.preventDefault();
         try {
-            const res = await axios.post(`${API}/audits`, formData);
+            const res = await api.post('/audits', formData);
             setShowCreate(false);
             resetForm();
             fetchData();
@@ -97,13 +101,13 @@ const Audits = () => {
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2 text-xs text-slate-500">
                                     <MapPin size={12} className="text-slate-300" />
-                                    <span className="font-bold">{audit.branch?.branch_name}</span>
+                                    <span className="font-bold">{audit.branch?.branchName || audit.branch?.branch_name}</span>
                                 </div>
                                 <div className="flex items-center gap-2 text-xs text-slate-500">
                                     <Calendar size={12} className="text-slate-300" />
-                                    <span>{audit.audit_date_time ? new Date(audit.audit_date_time).toLocaleDateString() : 'No date'}</span>
+                                    <span>{(audit.auditDateTime || audit.audit_date_time) ? new Date(audit.auditDateTime || audit.audit_date_time).toLocaleDateString() : 'No date'}</span>
                                     <Clock size={12} className="text-slate-300 ml-2" />
-                                    <span>{audit.audit_date_time ? new Date(audit.audit_date_time).toLocaleTimeString() : 'No time'}</span>
+                                    <span>{(audit.auditDateTime || audit.audit_date_time) ? new Date(audit.auditDateTime || audit.audit_date_time).toLocaleTimeString() : 'No time'}</span>
                                 </div>
                             </div>
                             <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between items-center">
@@ -142,12 +146,19 @@ const Audits = () => {
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Target Branch *</label>
                                     <select className="clean-input mt-1 appearance-none" value={formData.branchId} onChange={e => setFormData({ ...formData, branchId: e.target.value })} required>
                                         <option value="">Select Branch...</option>
-                                        {branches.map(b => <option key={b.id} value={b.id}>{b.branch_name}</option>)}
+                                        {branches.map(b => <option key={b.id} value={b.id}>{b.branchName || b.branch_name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Product Catalog *</label>
+                                    <select className="clean-input mt-1 appearance-none" value={formData.itemMasterId} onChange={e => setFormData({ ...formData, itemMasterId: e.target.value })} required>
+                                        <option value="">Select Catalog...</option>
+                                        {masters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Audit Date & Time</label>
-                                    <input type="datetime-local" className="clean-input mt-1" value={formData.audit_date_time} onChange={e => setFormData({ ...formData, audit_date_time: e.target.value })} />
+                                    <input type="datetime-local" className="clean-input mt-1" value={formData.auditDateTime} onChange={e => setFormData({ ...formData, auditDateTime: e.target.value })} />
                                 </div>
                                 <div className="flex gap-4 pt-8">
                                     <button type="button" onClick={() => { setShowCreate(false); resetForm(); }} className="flex-1 py-4 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all active:scale-95">Discard</button>

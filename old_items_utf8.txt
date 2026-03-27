@@ -1,0 +1,348 @@
+﻿import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { randomUUID } from 'crypto';
+
+@Injectable()
+export class ItemsService {
+    constructor(private prisma: PrismaService) { }
+
+    async findAll(tenantId: string, page = 1, limit = 20, search?: string) {
+        const skip = (page - 1) * limit;
+        const where: any = { tenantId };
+
+        if (search) {
+            where.OR = [
+                { sku_code: { contains: search, mode: 'insensitive' } },
+                { sku_name: { contains: search, mode: 'insensitive' } },
+                { brand_name: { contains: search, mode: 'insensitive' } },
+            ];
+        }
+
+        const [items, total] = await Promise.all([
+            this.prisma.item.findMany({
+                where,
+                skip,
+                take: limit,
+                include: { identifiers: true },
+                orderBy: { createdAt: 'desc' },
+            }),
+            this.prisma.item.count({ where }),
+        ]);
+
+        return {
+            items,
+            total,
+            pages: Math.ceil(total / limit),
+            currentPage: page,
+        };
+    }
+
+    async create(data: any) {
+        const { identifiers, expiry, productionDate, ...rest } = data;
+        return this.prisma.item.create({
+            data: {
+                ...rest,
+                expiry: expiry ? new Date(expiry) : undefined,
+                productionDate: productionDate ? new Date(productionDate) : undefined,
+                identifiers: { create: identifiers || [] },
+            },
+            include: { identifiers: true },
+        });
+    }
+
+    async bulkSync(tenantId: string, fileBuffer: Buffer) {
+        // Create job with 0 total initially, update after parsing
+        const job = await this.prisma.importJob.create({
+            data: {
+                tenantId,
+                total: 0,
+                status: 'STARTING'
+            }
+        });
+
+        // Fire and forget - background processing
+        this.runBulkSync(tenantId, job.id, fileBuffer).catch(err => {
+            console.error('Background sync fatal error:', err);
+            this.prisma.importJob.update({
+                where: { id: job.id },
+                data: { status: 'FAILED', message: err.message }
+            }).catch(() => {});
+        });
+
+        return job;
+    }
+
+    private async runBulkSync(tenantId: string, jobId: string, fileBuffer: Buffer) {
+        console.log(`[SYNC] Starting memory-efficient sync for Job ${jobId}. Buffer: ${fileBuffer.length} bytes`);
+        let processed = 0;
+        let failed = 0;
+
+        try {
+            const XLSX = require('xlsx');
+            const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellStyles: false, cellFormulas: false, cellDates: true, cellNF: false });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
+            const totalRows = range.e.r - range.s.r + 1;
+            console.log(`[SYNC] Sheet: ${sheetName}, Grid: ${range.s.r}:${range.s.c} to ${range.e.r}:${range.e.c}, Total Rows: ${totalRows}`);
+
+            // Find Header Row (Surgical Scan first 50 rows)
+            let headerRowIndex = -1;
+            const keywords = ['article', 'sku', 'code', 'product', 'item', 'gtin', 'barcode', 'description'];
+            
+            for (let r = range.s.r; r <= Math.min(range.s.r + 50, range.e.r); r++) {
+                let matchCount = 0;
+                let rowText = '';
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                    const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+                    if (cell && cell.v) {
+                        const cellVal = cell.v.toString().toLowerCase();
+                        rowText += cellVal + ' ';
+                        if (keywords.some(k => cellVal.includes(k))) matchCount++;
+                    }
+                }
+                // Require at least 2 matches to be a robust header row, or 1 if it's very specific
+                if (matchCount >= 2 || (matchCount >= 1 && (rowText.includes('article code') || rowText.includes('sku_code') || rowText.includes('item code')))) {
+                    headerRowIndex = r;
+                    break;
+                }
+            }
+            if (headerRowIndex === -1) headerRowIndex = range.s.r;
+            console.log(`[SYNC] Header detection result: Row ${headerRowIndex}`);
+
+            // Extract Header Keys
+            const headers: string[] = [];
+            for (let c = range.s.c; c <= range.e.c; c++) {
+                const cell = worksheet[XLSX.utils.encode_cell({ r: headerRowIndex, c })];
+                const val = cell ? cell.v.toString().replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim() : `Col${c}`;
+                headers.push(val);
+            }
+
+            // Check for Pharma 2-row header (Article/Code split)
+            const isTwoRow = headers.some(h => h.toLowerCase() === 'article') && range.e.r > headerRowIndex + 1;
+            if (isTwoRow) {
+                console.log('[SYNC] Re-evaluating 2-row Pharma header...');
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                    const cell2 = worksheet[XLSX.utils.encode_cell({ r: headerRowIndex + 1, c })];
+                    if (cell2 && cell2.v) headers[c] = (headers[c] + ' ' + cell2.v.toString()).trim();
+                }
+                headerRowIndex++; 
+            }
+
+            console.log(`[SYNC] Mapping with headers: ${JSON.stringify(headers.filter(h => !h.startsWith('Col')))}`);
+            await this.prisma.importJob.update({ where: { id: jobId }, data: { total: totalRows - 1, status: 'PROCESSING' } });
+
+            const batchSize = 500;
+            let currentBatch: any[] = [];
+            let firstRowLogged = false;
+
+            for (let r = headerRowIndex + 1; r <= range.e.r; r++) {
+                const rowData: any = {};
+                let hasData = false;
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                    const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+                    if (cell && cell.v !== undefined && cell.v !== null) {
+                        const h = headers[c - range.s.c];
+                        if (h) {
+                            rowData[h] = cell.v;
+                            hasData = true;
+                        }
+                    }
+                }
+                if (!hasData) continue;
+
+                if (!firstRowLogged) {
+                    console.log(`[SYNC] Debug Row 1 Sample: ${JSON.stringify(rowData).substring(0, 500)}...`);
+                    firstRowLogged = true;
+                }
+
+                const getValue = (keys: string[]) => {
+                    for (const key of keys) {
+                        const val = rowData[key];
+                        if (val !== undefined && val !== null && val !== '') return val;
+                        const found = Object.keys(rowData).find(k => k.toLowerCase().replace(/\s+/g, '') === key.toLowerCase().replace(/\s+/g, ''));
+                        if (found) return rowData[found];
+                    }
+                    return null;
+                };
+
+                const sku_code = getValue(['sku_code', 'article code', 'article', 'sku', 'code', 'item code', 'article number', 'product code'])?.toString().trim();
+                const sku_name = getValue(['sku_name', 'article description', 'name', 'product', 'item name', 'description', 'common name'])?.toString().trim();
+                
+                if (sku_code && sku_name) {
+                    const parseDate = (d: any) => { if (!d) return null; const dt = new Date(d); return isNaN(dt.getTime()) ? null : dt; };
+                    currentBatch.push({
+                        sku_code, sku_name,
+                        brand_name: getValue(['brand', 'manufacturer', 'supplier', 'brand_name'])?.toString() || null,
+                        gtin: getValue(['gtin', 'ean', 'upc'])?.toString() || null,
+                        batch: getValue(['batch', 'lot'])?.toString() || null,
+                        barcode: getValue(['barcode'])?.toString() || null,
+                        qrCode: getValue(['qr_code', 'qrcode', 'qr'])?.toString() || null,
+                        serialNumber: getValue(['serial', 'sno'])?.toString() || null,
+                        unit_cost_price: parseFloat(getValue(['unit cost', 'price', 'cost', 'article value'])?.toString().replace(/[^0-9.-]+/g, "") || '0'),
+                        uom: getValue(['uom', 'unit'])?.toString() || 'EA',
+                        expiry: parseDate(getValue(['expiry', 'exp date'])),
+                        productionDate: parseDate(getValue(['production date', 'mfg date'])),
+                        metadata: { family: getValue(['family', 'category', 'group']) },
+                        tenantId,
+                        identifiers: [
+                            ...(getValue(['barcode']) ? [{ type: 'BARCODE', value: getValue(['barcode']) }] : []),
+                            ...(getValue(['gtin', 'ean']) ? [{ type: 'GTIN', value: getValue(['gtin', 'ean']) }] : []),
+                            ...(getValue(['alternative article code 1', 'alt code 1']) ? [{ type: 'ALT1', value: getValue(['alternative article code 1', 'alt code 1']) }] : []),
+                        ]
+                    });
+                }
+
+                if (currentBatch.length >= batchSize || r === range.e.r) {
+                    if (currentBatch.length > 0) {
+                        try {
+                            const itemValues: any[][] = currentBatch.map(item => [
+                                require('crypto').randomUUID(), item.sku_code, item.sku_name, item.brand_name, item.gtin, item.batch,
+                                item.barcode, item.qrCode, item.serialNumber, item.upc_code || null,
+                                item.unit_cost_price, item.uom, item.expiry, item.productionDate, JSON.stringify(item.metadata),
+                                item.tenantId, new Date(), new Date()
+                            ]);
+
+                            let vIdx = 1;
+                            const placeholders = itemValues.map(() => 
+                                `($${vIdx++}::uuid, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}, $${vIdx++}::float, $${vIdx++}, $${vIdx++}::timestamp, $${vIdx++}::timestamp, $${vIdx++}::jsonb, $${vIdx++}::uuid, $${vIdx++}::timestamp, $${vIdx++}::timestamp)`
+                            ).join(', ');
+
+                            const upsertQuery = `
+                                INSERT INTO "Item" (
+                                    "id", "sku_code", "sku_name", "brand_name", "gtin", "batch", "barcode", "qrCode", 
+                                    "serialNumber", "upc_code", "unit_cost_price", "uom", "expiry", "productionDate", 
+                                    "metadata", "tenantId", "createdAt", "updatedAt"
+                                ) VALUES ${placeholders}
+                                ON CONFLICT ("tenantId", "sku_code") DO UPDATE SET
+                                    "sku_name" = EXCLUDED."sku_name", "brand_name" = EXCLUDED."brand_name", "gtin" = EXCLUDED."gtin",
+                                    "batch" = EXCLUDED."batch", "barcode" = EXCLUDED."barcode", "qrCode" = EXCLUDED."qrCode",
+                                    "serialNumber" = EXCLUDED."serialNumber", "upc_code" = EXCLUDED."upc_code", "unit_cost_price" = EXCLUDED."unit_cost_price",
+                                    "uom" = EXCLUDED."uom", "expiry" = EXCLUDED."expiry", "productionDate" = EXCLUDED."productionDate",
+                                    "metadata" = EXCLUDED."metadata", "updatedAt" = NOW()
+                                RETURNING "id", "sku_code"
+                            `;
+
+                            const dbItems: any[] = await this.prisma.$queryRawUnsafe(upsertQuery, ...itemValues.flat());
+                            const skuToId = new Map(dbItems.map(it => [it.sku_code, it.id]));
+
+                            const idValues: any[][] = [];
+                            for (const item of currentBatch) {
+                                const itemId = skuToId.get(item.sku_code);
+                                if (!itemId) continue;
+                                item.identifiers.forEach(id => { if (id.value) idValues.push([require('crypto').randomUUID(), id.type, id.value.toString(), itemId]); });
+                            }
+
+                            if (idValues.length > 0) {
+                                const idBatchSize = 1000;
+                                for (let j = 0; j < idValues.length; j += idBatchSize) {
+                                    const idBatch = idValues.slice(j, j + idBatchSize);
+                                    let iIdx = 1;
+                                    const idPlaceholders = idBatch.map(() => `($${iIdx++}::uuid, $${iIdx++}, $${iIdx++}, $${iIdx++}::uuid)`).join(', ');
+                                    const idQuery = `INSERT INTO "ItemIdentifier" ("id", "type", "value", "itemId") VALUES ${idPlaceholders}`;
+                                    await this.prisma.$executeRawUnsafe(idQuery, ...idBatch.flat());
+                                }
+                            }
+
+                            processed += currentBatch.length;
+                            await this.prisma.importJob.update({ where: { id: jobId }, data: { processed } });
+                        } catch (batchErr) {
+                            console.error('[SYNC] Batch failed, falling back to row-by-row:', batchErr);
+                            // FALLBACK: Try each item individually so we only skip the bad ones
+                            for (const item of currentBatch) {
+                                try {
+                                    const placeholders = `($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::float, $12, $13::timestamp, $14::timestamp, $15::jsonb, $16::uuid, $17::timestamp, $18::timestamp)`;
+                                    const values = [
+                                        require('crypto').randomUUID(), item.sku_code, item.sku_name, item.brand_name, item.gtin, item.batch,
+                                        item.barcode, item.qrCode, item.serialNumber, item.upc_code || null,
+                                        item.unit_cost_price, item.uom, item.expiry, item.productionDate, JSON.stringify(item.metadata),
+                                        item.tenantId, new Date(), new Date()
+                                    ];
+
+                                    const upsertQuery = `
+                                        INSERT INTO "Item" (
+                                            "id", "sku_code", "sku_name", "brand_name", "gtin", "batch", "barcode", "qrCode", 
+                                            "serialNumber", "upc_code", "unit_cost_price", "uom", "expiry", "productionDate", 
+                                            "metadata", "tenantId", "createdAt", "updatedAt"
+                                        ) VALUES ${placeholders}
+                                        ON CONFLICT ("tenantId", "sku_code") DO UPDATE SET
+                                            "sku_name" = EXCLUDED."sku_name", "brand_name" = EXCLUDED."brand_name", "gtin" = EXCLUDED."gtin",
+                                            "batch" = EXCLUDED."batch", "barcode" = EXCLUDED."barcode", "qrCode" = EXCLUDED."qrCode",
+                                            "serialNumber" = EXCLUDED."serialNumber", "upc_code" = EXCLUDED."upc_code", "unit_cost_price" = EXCLUDED."unit_cost_price",
+                                            "uom" = EXCLUDED."uom", "expiry" = EXCLUDED."expiry", "productionDate" = EXCLUDED."productionDate",
+                                            "metadata" = EXCLUDED."metadata", "updatedAt" = NOW()
+                                        RETURNING "id"
+                                    `;
+
+                                    const [dbItem]: any[] = await this.prisma.$queryRawUnsafe(upsertQuery, ...values);
+                                    
+                                    if (dbItem?.id && item.identifiers.length > 0) {
+                                        const idValues: any[][] = item.identifiers
+                                            .filter(id => id.value)
+                                            .map(id => [require('crypto').randomUUID(), id.type, id.value.toString(), dbItem.id]);
+                                        
+                                        if (idValues.length > 0) {
+                                            const idPlaceholders = idValues.map((_, i) => `($${i*4+1}::uuid, $${i*4+2}, $${i*4+3}, $${i*4+4}::uuid)`).join(', ');
+                                            const idQuery = `INSERT INTO "ItemIdentifier" ("id", "type", "value", "itemId") VALUES ${idPlaceholders}`;
+                                            await this.prisma.$executeRawUnsafe(idQuery, ...idValues.flat());
+                                        }
+                                    }
+                                    processed++;
+                                } catch (itemErr) {
+                                    console.error(`[SYNC] Row failed (SKU: ${item.sku_code}):`, itemErr.message);
+                                    failed++;
+                                }
+                                await this.prisma.importJob.update({ where: { id: jobId }, data: { processed, failed } }).catch(() => {});
+                            }
+                        }
+                    }
+                    currentBatch = [];
+                }
+            }
+
+            await this.prisma.importJob.update({ 
+                where: { id: jobId }, 
+                data: { status: 'COMPLETED', message: `Sync successful. Processed ${processed} items.` } 
+            });
+            console.log(`[SYNC] Job ${jobId} finished. Total processed: ${processed}`);
+
+        } catch (err) {
+            console.error('[SYNC] Fatal Error:', err);
+            await this.prisma.importJob.update({ where: { id: jobId }, data: { status: 'FAILED', message: err.message } }).catch(() => {});
+        }
+    }
+
+    async getImportStatus(tenantId: string) {
+        return this.prisma.importJob.findFirst({
+            where: { tenantId, status: { in: ['STARTING', 'PROCESSING'] } },
+            orderBy: { createdAt: 'desc' }
+        });
+    }
+
+    async deleteMany(tenantId: string, ids: string[]) {
+        // Delete identifiers first (or rely on cascade if configured, but let's be explicit)
+        await this.prisma.itemIdentifier.deleteMany({
+            where: { itemId: { in: ids } }
+        });
+
+        return this.prisma.item.deleteMany({
+            where: {
+                id: { in: ids },
+                tenantId
+            }
+        });
+    }
+
+    async deleteAll(tenantId: string) {
+        // Delete all identifiers for items of this tenant
+        await this.prisma.itemIdentifier.deleteMany({
+            where: {
+                item: { tenantId }
+            }
+        });
+
+        return this.prisma.item.deleteMany({
+            where: { tenantId }
+        });
+    }
+}

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { parseFileToRows, getRowValue } from '../common/parse-file.util';
 
 @Injectable()
 export class AuditsService {
@@ -7,9 +8,9 @@ export class AuditsService {
 
     async findAll(tenantId: string) {
         return this.prisma.audit.findMany({
-            where: { tenantId },
+            where: { tenantId, deletedAt: null },
             include: {
-                branch: { select: { branch_name: true } },
+                branch: { select: { branchName: true } },
                 _count: { select: { sections: true } }
             },
             orderBy: { createdAt: 'desc' }
@@ -19,9 +20,10 @@ export class AuditsService {
     async findOne(id: string, tenantId: string) {
         console.log(`[findOne] id=${id} tenantId=${tenantId}`);
         const result = await this.prisma.audit.findFirst({
-            where: { id, tenantId },
+            where: { id, tenantId, deletedAt: null },
             include: {
                 branch: true,
+                itemMaster: true,
                 sections: {
                     include: {
                         location: true,
@@ -46,7 +48,8 @@ export class AuditsService {
                 assignedUserId: userId,
                 status: { not: 'COMPLETED' },
                 audit: {
-                    status: { not: 'COMPLETED' }
+                    status: { not: 'COMPLETED' },
+                    deletedAt: null
                 }
             },
             include: {
@@ -57,11 +60,12 @@ export class AuditsService {
     }
 
     async create(data: any) {
-        const { audit_date_time, ...rest } = data;
+        const auditDateTime = data.auditDateTime || data.audit_date_time;
+        const { audit_date_time, ...rest } = data; // Clean up old field if present
         return this.prisma.audit.create({
             data: {
                 ...rest,
-                audit_date_time: audit_date_time ? new Date(audit_date_time) : undefined,
+                auditDateTime: auditDateTime ? new Date(auditDateTime) : undefined,
             },
             include: { branch: true }
         });
@@ -80,7 +84,7 @@ export class AuditsService {
         });
 
         if (locations.length === 0) {
-            throw new Error(`The branch "${audit.branch?.branch_name}" has no locations configured. Please add locations to this branch first.`);
+            throw new Error(`The branch "${audit.branch?.branchName}" has no locations configured. Please add locations to this branch first.`);
         }
 
         // Delete existing sections to regenerate
@@ -93,7 +97,7 @@ export class AuditsService {
         }));
 
         return this.prisma.auditSection.createMany({
-            data: sections,
+            data: sections as any,
         });
     }
 
@@ -148,7 +152,7 @@ export class AuditsService {
             const counted = itemCounts[b.itemId] || 0;
             const variance = counted - b.quantity;
             
-            const unitCost = b.item.unit_cost_price || 0;
+            const unitCost = b.item.unitCostPrice || 0;
             const varianceValue = variance * unitCost;
 
             const itemMeta: any = b.item.metadata || {};
@@ -178,8 +182,8 @@ export class AuditsService {
 
             return {
                 itemId: b.itemId,
-                sku: b.item.sku_code,
-                name: b.item.sku_name,
+                sku: b.item.skuCode,
+                name: b.item.skuName,
                 soh: b.quantity,
                 counted: counted,
                 variance: variance,
@@ -196,13 +200,13 @@ export class AuditsService {
             const item = await this.prisma.item.findUnique({ where: { id: itemId } });
             if (item) {
                 const counted = itemCounts[itemId];
-                const unitCost = item.unit_cost_price || 0;
+                const unitCost = item.unitCostPrice || 0;
                 const varianceValue = counted * unitCost;
 
                 report.push({
                     itemId: itemId,
-                    sku: item.sku_code,
-                    name: item.sku_name,
+                    sku: item.skuCode,
+                    name: item.skuName,
                     soh: 0,
                     counted: counted,
                     variance: counted, // variance is purely the counted amount
@@ -263,7 +267,12 @@ export class AuditsService {
             }
 
             const item = await this.prisma.item.findFirst({
-                where: { sku_code: partNum.toString(), tenantId: audit.tenantId }
+                where: { 
+                    skuCode: partNum.toString(), 
+                    tenantId: audit.tenantId, 
+                    itemMasterId: audit.itemMasterId, // Scoped to master
+                    deletedAt: null 
+                }
             });
 
             if (!item) {
@@ -273,10 +282,10 @@ export class AuditsService {
             const clientEventId = `IMPORT_${auditId}_${section.id}_${item.id}_${Date.now()}_${i}`;
             
             await this.prisma.countEvent.upsert({
-                where: { client_event_id: clientEventId },
+                where: { clientEventId: clientEventId },
                 update: {},
                 create: {
-                    client_event_id: clientEventId,
+                    clientEventId: clientEventId,
                     tenantId: audit.tenantId,
                     sectionId: section.id,
                     itemId: item.id,
@@ -333,67 +342,75 @@ export class AuditsService {
         ]);
     }
 
-    async uploadSohBaseline(auditId: string, items: any[]) {
+    async uploadSohBaseline(auditId: string, file: Express.Multer.File) {
         const audit = await this.prisma.audit.findUnique({ where: { id: auditId } });
         if (!audit) throw new Error('Audit not found');
 
         const branchId = audit.branchId;
+        const items = parseFileToRows(file);
+        
+        let imported = 0;
+        let skipped = 0;
 
         for (const data of items) {
-            // Helper to get value ignoring case and handling #N/A
-            const getValue = (keys: string[], allowZero = true) => {
-                const rawKeys = Object.keys(data);
-                for (const key of keys) {
-                    const exactMatch = data[key];
-                    if (exactMatch !== undefined && exactMatch !== null && exactMatch !== '#N/A' && exactMatch !== '') {
-                        return exactMatch;
-                    }
-                    if (exactMatch === 0 && allowZero) return 0;
-                    
-                    const lowerKey = key.toLowerCase();
-                    const foundKey = rawKeys.find(k => k.toLowerCase() === lowerKey);
-                    if (foundKey) {
-                        const val = data[foundKey];
-                        if (val !== undefined && val !== null && val !== '#N/A' && val !== '') {
-                            return val;
-                        }
-                        if (val === 0 && allowZero) return 0;
-                    }
-                }
-                return undefined;
-            };
-
-            const sku = getValue(['Article code', 'sku', 'Article Code', 'Item Code']);
-            let quantityRaw = getValue(['Quantity', 'SOH', 'Stock'], true);
-            const locationCode = getValue(['Location', 'Bin', 'Shelve', 'Location ID']);
+            const sku = getRowValue(data, ['Article code', 'Article Code', 'sku', 'Item Code', 'Item']);
+            let quantityRaw = getRowValue(data, ['Quantity', 'quantity', 'SOH', 'Stock']);
+            const locationCode = getRowValue(data, ['Location', 'location', 'Bin', 'Shelve']);
             
-            if (!sku || quantityRaw === undefined) continue;
+            // Check original object for numeric 0 if strings fail
+            if (quantityRaw === undefined) {
+                 const rawKeys = Object.keys(data);
+                 for (const key of rawKeys) {
+                     if (['quantity', 'soh', 'stock'].includes(key.toLowerCase()) && data[key] === 0) {
+                         quantityRaw = '0';
+                         break;
+                     }
+                 }
+            }
+            
+            if (!sku || quantityRaw === undefined) {
+                skipped++;
+                continue;
+            }
 
-            const quantity = parseFloat(quantityRaw.toString().replace(/[^0-9.-]+/g, ""));
-            if (isNaN(quantity)) continue;
+            const quantity = parseFloat(String(quantityRaw).replace(/[^0-9.-]+/g, ""));
+            if (isNaN(quantity)) {
+                skipped++;
+                continue;
+            }
 
-            // Ensure the Location matches a record in Location table for the specific branchId
             if (locationCode) {
                 const locationMatch = await this.prisma.location.findFirst({
                     where: { branchId, code: locationCode }
                 });
                 if (!locationMatch) {
                     console.warn(`Location ${locationCode} not found for branch ${branchId}. Skipping SOH for SKU ${sku}`);
+                    skipped++;
                     continue;
                 }
             }
 
             const item = await this.prisma.item.findFirst({
-                where: { sku_code: sku.toString(), tenantId: audit.tenantId },
+                where: { 
+                    skuCode: sku!.toString(), 
+                    tenantId: audit!.tenantId, 
+                    itemMasterId: audit!.itemMasterId, 
+                    deletedAt: null 
+                },
             });
 
             if (item) {
                 await this.prisma.auditSohBaseline.upsert({
-                    where: { auditId_itemId: { auditId, itemId: item.id } },
+                    where: { auditId_itemId: { auditId, itemId: item!.id } },
                     update: { quantity },
-                    create: { auditId, itemId: item.id, quantity },
+                    create: { auditId, itemId: item!.id, quantity },
                 });
+                imported++;
+            } else {
+                skipped++;
             }
         }
+        
+        return { message: 'SOH Baseline uploaded successfully', imported, skipped };
     }
 }

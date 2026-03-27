@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { BarChart3, Download, Filter, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const Reports = () => {
     const [variances, setVariances] = useState([]);
@@ -11,7 +11,7 @@ const Reports = () => {
 
     const fetchVariance = async () => {
         try {
-            const response = await axios.get(`${API}/reports/audits/${auditId}/variance`);
+            const response = await api.get(`/reports/audits/${auditId}/variance`);
             setVariances(response.data);
         } catch (error) {
             console.error('Error fetching variance', error);
@@ -26,7 +26,7 @@ const Reports = () => {
 
     const handleExport = async () => {
         try {
-            const response = await axios.get(`${API}/reports/audits/${auditId}/variance/export`, {
+            const response = await api.get(`/reports/audits/${auditId}/variance/export`, {
                 responseType: 'blob'
             });
             const url = window.URL.createObjectURL(new Blob([response.data]));

@@ -65,28 +65,7 @@ export class AuditsController {
     @Post(':id/soh-baseline')
     @UseInterceptors(FileInterceptor('file'))
     async uploadSoh(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
-        const csvData = file.buffer.toString();
-        const lines = csvData.split(/\r?\n/);
-
-        // Find the actual header row
-        let headerIndex = 0;
-        for (let i = 0; i < Math.min(10, lines.length); i++) {
-            if (lines[i].toLowerCase().includes('article code') || lines[i].toLowerCase().includes('sku') || lines[i].toLowerCase().includes('item')) {
-                headerIndex = i;
-                break;
-            }
-        }
-        
-        const dataToParse = lines.slice(headerIndex).join('\n');
-
-        const parsed = Papa.parse(dataToParse, { 
-            header: true, 
-            skipEmptyLines: true,
-            transformHeader: (header) => header.trim()
-        });
-        
-        await this.auditsService.uploadSohBaseline(id, parsed.data as any);
-        return { message: 'SOH Baseline uploaded', count: parsed.data.length };
+        return this.auditsService.uploadSohBaseline(id, file);
     }
 
     @Get(':id/variance-report')

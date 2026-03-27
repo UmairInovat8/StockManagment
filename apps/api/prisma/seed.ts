@@ -9,43 +9,53 @@ async function main() {
 
     // 1. Create Tenant (Holding Company)
     let tenant = await prisma.tenant.findFirst({
-        where: { company_name: 'athgadlang Global' }
+        where: { companyName: 'athgadlang Global' }
     });
     if (!tenant) {
         tenant = await prisma.tenant.create({
-            data: { company_name: 'athgadlang Global', company_code: 'ATH-001' }
+            data: { companyName: 'athgadlang Global', companyCode: 'ATH-001' }
         });
     }
 
-    // 2. Create Brand (Sub-Company / Retail Entity)
-    const brand = await prisma.brand.upsert({
-        where: { brand_code: 'SC-SOLUTIONS' },
+    // 1.5 Create Item Master
+    const itemMaster = await prisma.itemMaster.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: 'Default Master' } },
         update: {},
         create: {
-            brand_name: 'StockCount Solutions',
-            brand_code: 'SC-SOLUTIONS',
+            name: 'Default Master',
+            tenantId: tenant.id,
+        },
+    });
+
+    // 2. Create Brand (Sub-Company / Retail Entity)
+    const brand = await prisma.brand.upsert({
+        where: { brandCode: 'SC-SOLUTIONS' },
+        update: {},
+        create: {
+            brandName: 'StockCount Solutions',
+            brandCode: 'SC-SOLUTIONS',
             tenantId: tenant.id
         }
     });
 
     // 3. Create Branch (Physical Location)
     const branch = await prisma.branch.upsert({
-        where: { branch_code: 'BR-001' },
+        where: { branchCode: 'BR-001' },
         update: {},
         create: {
-            branch_name: 'Flagship Store',
-            branch_code: 'BR-001',
+            branchName: 'Flagship Store',
+            branchCode: 'BR-001',
             type: 'RETAIL',
             status: 'ACTIVE',
             poc: 'John Doe',
-            branch_location: '123 Main Street, Dubai',
-            resources_assigned: 5,
-            counters_count: 4,
-            shelves_count: 20,
-            gondolas_count: 8,
-            area_manager_name: 'Jane Smith',
-            business_entity_type: 'Retail',
-            invoice_to: 'athgadlang Global LLC',
+            branchLocation: '123 Main Street, Dubai',
+            resourcesAssigned: 5,
+            countersCount: 4,
+            shelvesCount: 20,
+            gondolasCount: 8,
+            areaManagerName: 'Jane Smith',
+            businessEntityType: 'Retail',
+            invoiceTo: 'athgadlang Global LLC',
             brandId: brand.id,
             tenantId: tenant.id
         },
@@ -121,13 +131,14 @@ async function main() {
     const itemsData: any[] = [];
     for (let i = 1; i <= 2000; i++) {
         itemsData.push({
-            sku_code: `SKU-${i.toString().padStart(4, '0')}`,
-            sku_name: `Product ${i}`,
+            skuCode: `SKU-${i.toString().padStart(4, '0')}`,
+            skuName: `Product ${i}`,
             uom: 'EA',
-            unit_cost_price: parseFloat((Math.random() * 100).toFixed(2)),
+            unitCostPrice: parseFloat((Math.random() * 100).toFixed(2)),
             quantity: Math.floor(Math.random() * 500),
             status: 'ACTIVE',
             tenantId: tenant.id,
+            itemMasterId: itemMaster.id,
         });
     }
 

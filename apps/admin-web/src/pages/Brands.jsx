@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { Plus, Tag, X, Edit2, Trash2, XCircle, Building, Pencil } from 'lucide-react';
 import ModalPortal from '../components/ModalPortal';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const BrandForm = ({ onSubmit, title, formData, setFormData, onClose }) => (
     <ModalPortal>
@@ -26,8 +26,8 @@ const BrandForm = ({ onSubmit, title, formData, setFormData, onClose }) => (
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand / Sub-Entity Name *</label>
                         <input
                             className="clean-input mt-1"
-                            value={formData.brand_name}
-                            onChange={e => setFormData({ ...formData, brand_name: e.target.value })}
+                            value={formData.brandName}
+                            onChange={e => setFormData({ ...formData, brandName: e.target.value })}
                             placeholder="e.g. Retail Chain - Dubai"
                             required
                         />
@@ -36,8 +36,8 @@ const BrandForm = ({ onSubmit, title, formData, setFormData, onClose }) => (
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand Code *</label>
                         <input
                             className="clean-input mt-1 font-mono"
-                            value={formData.brand_code}
-                            onChange={e => setFormData({ ...formData, brand_code: e.target.value })}
+                            value={formData.brandCode}
+                            onChange={e => setFormData({ ...formData, brandCode: e.target.value })}
                             placeholder="e.g. RCD-001"
                             required
                         />
@@ -57,11 +57,11 @@ const Brands = () => {
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
     const [editBrand, setEditBrand] = useState(null);
-    const [formData, setFormData] = useState({ brand_name: '', brand_code: '' });
+    const [formData, setFormData] = useState({ brandName: '', brandCode: '' });
 
     const fetchBrands = async () => {
         try {
-            const res = await axios.get(`${API}/brands`);
+            const res = await api.get('/brands');
             setBrands(res.data);
         } catch (e) {
             console.error('Error fetching brands', e);
@@ -72,12 +72,12 @@ const Brands = () => {
 
     useEffect(() => { fetchBrands(); }, []);
 
-    const resetForm = () => setFormData({ brand_name: '', brand_code: '' });
+    const resetForm = () => setFormData({ brandName: '', brandCode: '' });
 
     const handleCreate = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API}/brands`, formData);
+            await api.post('/brands', formData);
             setShowCreate(false);
             resetForm();
             fetchBrands();
@@ -89,7 +89,7 @@ const Brands = () => {
     const handleEdit = async (e) => {
         e.preventDefault();
         try {
-            await axios.patch(`${API}/brands/${editBrand.id}`, formData);
+            await api.patch(`/brands/${editBrand.id}`, formData);
             setEditBrand(null);
             resetForm();
             fetchBrands();
@@ -101,7 +101,7 @@ const Brands = () => {
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this brand? This will also affect linked branches.')) return;
         try {
-            await axios.delete(`${API}/brands/${id}`);
+            await api.delete(`/brands/${id}`);
             fetchBrands();
         } catch (e) {
             alert('Failed to delete brand: ' + (e.response?.data?.message || e.message));
@@ -110,7 +110,7 @@ const Brands = () => {
 
     const openEdit = (brand) => {
         setEditBrand(brand);
-        setFormData({ brand_name: brand.brand_name, brand_code: brand.brand_code });
+        setFormData({ brandName: brand.brandName || brand.brand_name, brandCode: brand.brandCode || brand.brand_code });
     };
 
     const closeForm = () => {
@@ -153,8 +153,8 @@ const Brands = () => {
                                     {brand._count?.branches ?? brand.branches?.length ?? 0} branch{(brand._count?.branches ?? 0) !== 1 ? 'es' : ''}
                                 </span>
                             </div>
-                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{brand.brand_name}</h3>
-                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">{brand.brand_code}</p>
+                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{brand.brandName || brand.brand_name}</h3>
+                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">{brand.brandCode || brand.brand_code}</p>
                             <div className="flex gap-2 mt-6 opacity-0 group-hover:opacity-100 transition-all">
                                 <button onClick={() => openEdit(brand)} className="flex-1 py-2 text-xs font-black text-slate-500 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all flex items-center justify-center gap-1">
                                     <Pencil size={12} /> Edit

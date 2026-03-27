@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import {
     Activity,
     Package,
@@ -15,7 +15,7 @@ import {
     Users
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const Dashboard = () => {
     const [stats, setStats] = useState({
@@ -29,7 +29,7 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
-                const res = await axios.get(`${API}/tenant/dashboard`);
+                const res = await api.get('/tenant/dashboard');
                 if (res.data) setStats(res.data);
             } catch (err) {
                 console.error("Failed to fetch dashboard stats", err);

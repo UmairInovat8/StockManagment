@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Search, Plus, MapPin, Phone, User, Settings, Edit2, Trash2, XCircle, ChevronRight, Globe, Tag, Building2, Pencil } from 'lucide-react';
+import api from '../lib/api';
+import { Search, Plus, MapPin, Phone, User, Settings, Edit2, Trash2, XCircle, ChevronRight, Globe, Tag, Building2, Pencil, Upload } from 'lucide-react';
 import ModalPortal from '../components/ModalPortal';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const BranchForm = ({ onSubmit, title, formData, setFormData, brands, onClose }) => (
     <ModalPortal>
@@ -25,18 +25,18 @@ const BranchForm = ({ onSubmit, title, formData, setFormData, brands, onClose })
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Branch Name *</label>
-                            <input className="clean-input mt-1" value={formData.branch_name} onChange={e => setFormData({ ...formData, branch_name: e.target.value })} required />
+                            <input className="clean-input mt-1" value={formData.branchName} onChange={e => setFormData({ ...formData, branchName: e.target.value })} required />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Branch Code *</label>
-                            <input className="clean-input mt-1 font-mono" value={formData.branch_code} onChange={e => setFormData({ ...formData, branch_code: e.target.value })} required />
+                            <input className="clean-input mt-1 font-mono" value={formData.branchCode} onChange={e => setFormData({ ...formData, branchCode: e.target.value })} required />
                         </div>
                     </div>
                     <div>
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Parent Brand / Sub-Entity *</label>
                         <select className="clean-input mt-1 appearance-none" value={formData.brandId} onChange={e => setFormData({ ...formData, brandId: e.target.value })} required>
                             <option value="">Select Brand...</option>
-                            {brands.map(b => <option key={b.id} value={b.id}>{b.brand_name}</option>)}
+                            {brands.map(b => <option key={b.id} value={b.id}>{b.brandName}</option>)}
                         </select>
                     </div>
                     <div>
@@ -52,24 +52,24 @@ const BranchForm = ({ onSubmit, title, formData, setFormData, brands, onClose })
                     </div>
                     <div>
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Physical Address</label>
-                        <textarea className="clean-input mt-1" rows={2} value={formData.branch_location} onChange={e => setFormData({ ...formData, branch_location: e.target.value })} />
+                        <textarea className="clean-input mt-1" rows={2} value={formData.branchLocation} onChange={e => setFormData({ ...formData, branchLocation: e.target.value })} />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No. of Resources</label>
-                            <input className="clean-input mt-1" type="number" min="0" value={formData.resources_assigned} onChange={e => setFormData({ ...formData, resources_assigned: e.target.value })} />
+                            <input className="clean-input mt-1" type="number" min="0" value={formData.resourcesAssigned} onChange={e => setFormData({ ...formData, resourcesAssigned: e.target.value })} />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Counters</label>
-                            <input className="clean-input mt-1" type="number" min="0" value={formData.counters_count} onChange={e => setFormData({ ...formData, counters_count: e.target.value })} />
+                            <input className="clean-input mt-1" type="number" min="0" value={formData.countersCount} onChange={e => setFormData({ ...formData, countersCount: e.target.value })} />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Shelves</label>
-                            <input className="clean-input mt-1" type="number" min="0" value={formData.shelves_count} onChange={e => setFormData({ ...formData, shelves_count: e.target.value })} />
+                            <input className="clean-input mt-1" type="number" min="0" value={formData.shelvesCount} onChange={e => setFormData({ ...formData, shelvesCount: e.target.value })} />
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gondolas</label>
-                            <input className="clean-input mt-1" type="number" min="0" value={formData.gondolas_count} onChange={e => setFormData({ ...formData, gondolas_count: e.target.value })} />
+                            <input className="clean-input mt-1" type="number" min="0" value={formData.gondolasCount} onChange={e => setFormData({ ...formData, gondolasCount: e.target.value })} />
                         </div>
                     </div>
                     <div className="flex gap-4 pt-8">
@@ -90,13 +90,13 @@ const Branches = () => {
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
     const [editBranch, setEditBranch] = useState(null);
-    const [formData, setFormData] = useState({ branch_name: '', branch_code: '', brandId: '', status: 'ACTIVE', poc: '', branch_location: '', resources_assigned: '', counters_count: '', shelves_count: '', gondolas_count: '' });
+    const [formData, setFormData] = useState({ branchName: '', branchCode: '', brandId: '', status: 'ACTIVE', poc: '', branchLocation: '', resourcesAssigned: '', countersCount: '', shelvesCount: '', gondolasCount: '' });
 
     const fetchBranches = async () => {
         try {
             const [bRes, brRes] = await Promise.all([
-                axios.get(`${API}/branches`),
-                axios.get(`${API}/brands`)
+                api.get('/branches'),
+                api.get('/brands')
             ]);
             setBranches(bRes.data);
             setBrands(brRes.data);
@@ -109,12 +109,12 @@ const Branches = () => {
 
     useEffect(() => { fetchBranches(); }, []);
 
-    const resetForm = () => setFormData({ branch_name: '', branch_code: '', brandId: '', status: 'ACTIVE', poc: '', branch_location: '', resources_assigned: '', counters_count: '', shelves_count: '', gondolas_count: '' });
+    const resetForm = () => setFormData({ branchName: '', branchCode: '', brandId: '', status: 'ACTIVE', poc: '', branchLocation: '', resourcesAssigned: '', countersCount: '', shelvesCount: '', gondolasCount: '' });
 
     const handleCreate = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API}/branches`, formData);
+            await api.post('/branches', formData);
             setShowCreate(false);
             resetForm();
             fetchBranches();
@@ -126,7 +126,7 @@ const Branches = () => {
     const handleEdit = async (e) => {
         e.preventDefault();
         try {
-            await axios.patch(`${API}/branches/${editBranch.id}`, formData);
+            await api.patch(`/branches/${editBranch.id}`, formData);
             setEditBranch(null);
             resetForm();
             fetchBranches();
@@ -138,26 +138,46 @@ const Branches = () => {
     const handleDelete = async (id) => {
         if (!window.confirm('Delete this branch?')) return;
         try {
-            await axios.delete(`${API}/branches/${id}`);
+            await api.delete(`/branches/${id}`);
             fetchBranches();
         } catch (error) {
             alert('Failed to delete branch.');
         }
     };
 
+    const handleImport = async (branchId, e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            // Toast/Alert to show loading could go here if we had a global toast. Using native alert for simplicity per spec.
+            const res = await api.post(`/branches/${branchId}/import-locations`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            alert(`✅ ${res.data.imported} locations imported successfully. ${res.data.skipped} rows skipped.`);
+        } catch (error) {
+            alert('Failed to import locations: ' + (error.response?.data?.message || error.message));
+        } finally {
+            e.target.value = null; // Reset input so the same file can be re-selected if needed
+        }
+    };
+
     const openEdit = (branch) => {
         setEditBranch(branch);
         setFormData({
-            branch_name: branch.branch_name || '',
-            branch_code: branch.branch_code || '',
+            branchName: branch.branchName || branch.branch_name || '',
+            branchCode: branch.branchCode || branch.branch_code || '',
             brandId: branch.brandId || '',
             status: branch.status || 'ACTIVE',
             poc: branch.poc || '',
-            branch_location: branch.branch_location || '',
-            resources_assigned: branch.resources_assigned || '',
-            counters_count: branch.counters_count || '',
-            shelves_count: branch.shelves_count || '',
-            gondolas_count: branch.gondolas_count || '',
+            branchLocation: branch.branchLocation || branch.branch_location || '',
+            resourcesAssigned: branch.resourcesAssigned || branch.resources_assigned || '',
+            countersCount: branch.countersCount || branch.counters_count || '',
+            shelvesCount: branch.shelvesCount || branch.shelves_count || '',
+            gondolasCount: branch.gondolasCount || branch.gondolas_count || '',
         });
     };
 
@@ -195,18 +215,24 @@ const Branches = () => {
                                     {branch.status || 'Active'}
                                 </span>
                             </div>
-                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{branch.branch_name}</h3>
-                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">Code: {branch.branch_code}</p>
+                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{branch.branchName || branch.branch_name}</h3>
+                            <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">Code: {branch.branchCode || branch.branch_code}</p>
                             {branch.poc && <p className="text-xs text-slate-500 mt-2 font-medium">POC: {branch.poc}</p>}
-                            {branch.branch_location && <p className="text-xs text-slate-400 mt-1">{branch.branch_location}</p>}
-                            {(branch.counters_count || branch.shelves_count || branch.gondolas_count) && (
+                            {(branch.branchLocation || branch.branch_location) && <p className="text-xs text-slate-400 mt-1">{branch.branchLocation || branch.branch_location}</p>}
+                            {(branch.countersCount || branch.counters_count || branch.shelvesCount || branch.shelves_count || branch.gondolasCount || branch.gondolas_count) && (
                                 <div className="mt-4 flex gap-3 text-[10px] font-black text-slate-300 uppercase tracking-widest border-t border-slate-50 pt-4">
-                                    {branch.counters_count && <span>Counters: {branch.counters_count}</span>}
-                                    {branch.shelves_count && <span>Shelves: {branch.shelves_count}</span>}
-                                    {branch.gondolas_count && <span>Gondolas: {branch.gondolas_count}</span>}
+                                    {(branch.countersCount || branch.counters_count) && <span>Counters: {branch.countersCount || branch.counters_count}</span>}
+                                    {(branch.shelvesCount || branch.shelves_count) && <span>Shelves: {branch.shelvesCount || branch.shelves_count}</span>}
+                                    {(branch.gondolasCount || branch.gondolas_count) && <span>Gondolas: {branch.gondolasCount || branch.gondolas_count}</span>}
                                 </div>
                             )}
                             <div className="flex gap-2 mt-6 opacity-0 group-hover:opacity-100 transition-all">
+                                <label className="flex-[2] py-2 text-xs font-black text-[#38bdf8] bg-sky-50 border border-sky-100 rounded-xl hover:bg-sky-100 transition-all flex items-center justify-center gap-1 cursor-pointer">
+                                    <Upload size={12} /> Import Layout
+                                    <input type="file" accept=".xlsx,.csv" className="hidden" onChange={(e) => handleImport(branch.id, e)} />
+                                </label>
+                            </div>
+                            <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-all">
                                 <button onClick={() => openEdit(branch)} className="flex-1 py-2 text-xs font-black text-slate-500 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all flex items-center justify-center gap-1"><Pencil size={12} /> Edit</button>
                                 <button onClick={() => handleDelete(branch.id)} className="flex-1 py-2 text-xs font-black text-red-500 bg-red-50 border border-red-100 rounded-xl hover:bg-red-100 transition-all flex items-center justify-center gap-1"><Trash2 size={12} /> Delete</button>
                             </div>

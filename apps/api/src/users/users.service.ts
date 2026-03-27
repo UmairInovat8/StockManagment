@@ -15,7 +15,7 @@ export class UsersService {
                 lastName: true,
                 createdAt: true,
                 roles: { select: { role: { select: { name: true } } } },
-                branchAccess: { select: { branch: { select: { id: true, branch_name: true } } } },
+                branchAccess: { select: { branch: { select: { id: true, branchName: true } } } },
             },
             orderBy: { createdAt: 'desc' },
         });

@@ -2,9 +2,6 @@ import { Controller, Get, Post, Delete, Body, Query, UseInterceptors, UploadedFi
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ItemsService } from './items.service';
-import * as Papa from 'papaparse';
-import * as XLSX from 'xlsx';
-
 
 @Controller('items')
 @UseGuards(JwtAuthGuard)
@@ -14,28 +11,47 @@ export class ItemsController {
     @Get()
     async findAll(
         @Request() req: any, 
+        @Query('itemMasterId') itemMasterId: string,
         @Query('page') page: string, 
         @Query('limit') limit: string,
         @Query('search') search: string
     ) {
-        return this.itemsService.findAll(req.user.tenantId, +page || 1, +limit || 20, search);
+        return this.itemsService.findAll(req.user.tenantId, itemMasterId, +page || 1, +limit || 20, search);
+    }
+
+    @Get('masters')
+    async getMasters(@Request() req: any) {
+        return this.itemsService.findAllMasters(req.user.tenantId);
+    }
+
+    @Post('masters')
+    async createMaster(@Body('name') name: string, @Body('tenantId') brandId: string, @Request() req: any) {
+        return this.itemsService.createMaster(req.user.tenantId, name, brandId);
     }
 
     @Post('upload')
-    @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
-    async uploadFile(@UploadedFile() file: any, @Request() req: any) {
-        if (!file || !file.buffer) {
-            throw new Error('No file uploaded or file is empty');
+    @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 500 * 1024 * 1024 } }))
+    async uploadFile(
+        @UploadedFile() file: any, 
+        @Body('itemMasterId') itemMasterId: string,
+        @Request() req: any
+    ) {
+        if (!file || !file.buffer) throw new Error('No file uploaded');
+        if (!itemMasterId) throw new Error('Item Master selection required');
+
+        // FIX #6: File validation gate
+        const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const XLS_MIME = 'application/vnd.ms-excel';
+        const MAX_XLSX_BYTES = 50 * 1024 * 1024; // 50MB
+        if ((file.mimetype === XLSX_MIME || file.mimetype === XLS_MIME) && file.size > MAX_XLSX_BYTES) {
+            throw new Error(`Excel files over 50MB are not supported (uploaded: ${(file.size / 1024 / 1024).toFixed(1)}MB). Please export your data as a CSV file and try again.`);
         }
-        
-        console.log(`Received file: ${file.originalname}, size: ${file.size} bytes`);
-        
-        // Background process the full sync
-        this.itemsService.bulkSync(req.user.tenantId, file.buffer);
+
+        const job = await this.itemsService.bulkSync(req.user.tenantId, file.buffer, itemMasterId);
         
         return { 
-            message: 'Progress synchronization initiated successfully.',
-            detail: 'The catalog is being processed in the background.'
+            message: 'Sync started',
+            jobId: job.id
         };
     }
 
@@ -58,7 +74,7 @@ export class ItemsController {
     }
 
     @Delete('all')
-    async deleteAll(@Request() req: any) {
-        return this.itemsService.deleteAll(req.user.tenantId);
+    async deleteAll(@Query('itemMasterId') itemMasterId: string, @Request() req: any) {
+        return this.itemsService.deleteAll(req.user.tenantId, itemMasterId);
     }
 }

@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Request, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BranchesService } from './branches.service';
 
@@ -33,5 +34,14 @@ export class BranchesController {
     @Delete(':id')
     async remove(@Param('id') id: string, @Request() req: any) {
         return this.branchesService.remove(id, req.user.tenantId);
+    }
+
+    @Post(':id/import-locations')
+    @UseInterceptors(FileInterceptor('file'))
+    async importLocations(
+        @Param('id') id: string,
+        @UploadedFile() file: Express.Multer.File,
+    ) {
+        return this.branchesService.importLocations(id, file);
     }
 }

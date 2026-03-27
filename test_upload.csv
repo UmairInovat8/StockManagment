@@ -1,0 +1,3 @@
+skuCode,skuName,brandName,gtin,barcode,expiry
+TEST001,Test Item 1,Test Brand,12345678,B001,2026-12-31
+TEST002,Test Item 2,Test Brand,87654321,B002,2026-12-31

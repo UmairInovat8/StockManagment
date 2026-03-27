@@ -9,7 +9,7 @@ export class LocationsService {
         // Basic implementation: fetch all and build tree or just fetch hierarchy
         // @ts-ignore
         return this.prisma.location.findMany({
-            where: { branchId, parent_id: null },
+            where: { branchId, parentId: null },
             include: {
                 children: {
                     include: {
@@ -37,7 +37,7 @@ export class LocationsService {
         const branches = await this.prisma.branch.findMany({
             where: { tenantId }
         });
-        const branchMap = new Map(branches.map(b => [b.branch_code.toLowerCase(), b.id]));
+        const branchMap = new Map(branches.map(b => [b.branchCode.toLowerCase(), b.id]));
 
         for (const rawItem of items) {
             const getValue = (keys: string[]) => {

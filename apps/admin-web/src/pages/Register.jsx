@@ -19,11 +19,13 @@ const Register = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        const success = await register(formData);
-        if (success) {
-            navigate('/');
-        } else {
-            setError('Registration failed. Please check your details and try again.');
+        try {
+            const success = await register(formData);
+            if (success) {
+                navigate('/');
+            }
+        } catch (err) {
+            setError(err.message || 'Registration failed. Please check your details and try again.');
         }
     };
 

@@ -119,18 +119,28 @@ exports.Prisma.TransactionIsolationLevel = makeStrictEnum({
 
 exports.Prisma.TenantScalarFieldEnum = {
   id: 'id',
-  company_name: 'company_name',
-  company_code: 'company_code',
+  companyName: 'companyName',
+  companyCode: 'companyCode',
   metadata: 'metadata',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   deletedAt: 'deletedAt'
 };
 
+exports.Prisma.ItemMasterScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  tenantId: 'tenantId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt',
+  brandId: 'brandId'
+};
+
 exports.Prisma.BrandScalarFieldEnum = {
   id: 'id',
-  brand_name: 'brand_name',
-  brand_code: 'brand_code',
+  brandName: 'brandName',
+  brandCode: 'brandCode',
   metadata: 'metadata',
   profileUrl: 'profileUrl',
   profileContent: 'profileContent',
@@ -142,20 +152,20 @@ exports.Prisma.BrandScalarFieldEnum = {
 
 exports.Prisma.BranchScalarFieldEnum = {
   id: 'id',
-  branch_name: 'branch_name',
-  branch_code: 'branch_code',
+  branchName: 'branchName',
+  branchCode: 'branchCode',
   type: 'type',
   status: 'status',
   poc: 'poc',
-  branch_location: 'branch_location',
-  resources_assigned: 'resources_assigned',
-  counters_count: 'counters_count',
-  shelves_count: 'shelves_count',
-  gondolas_count: 'gondolas_count',
-  area_manager_name: 'area_manager_name',
-  business_entity_type: 'business_entity_type',
-  invoice_to: 'invoice_to',
-  count_schedule_date: 'count_schedule_date',
+  branchLocation: 'branchLocation',
+  resourcesAssigned: 'resourcesAssigned',
+  countersCount: 'countersCount',
+  shelvesCount: 'shelvesCount',
+  gondolasCount: 'gondolasCount',
+  areaManagerName: 'areaManagerName',
+  businessEntityType: 'businessEntityType',
+  invoiceTo: 'invoiceTo',
+  countScheduleDate: 'countScheduleDate',
   metadata: 'metadata',
   parentId: 'parentId',
   brandId: 'brandId',
@@ -173,7 +183,8 @@ exports.Prisma.UserScalarFieldEnum = {
   lastName: 'lastName',
   tenantId: 'tenantId',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.RoleScalarFieldEnum = {
@@ -207,25 +218,26 @@ exports.Prisma.LocationScalarFieldEnum = {
   code: 'code',
   qrValue: 'qrValue',
   locationType: 'locationType',
-  parent_id: 'parent_id',
+  parentId: 'parentId',
   branchId: 'branchId',
   metadata: 'metadata',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.ItemScalarFieldEnum = {
   id: 'id',
-  sku_code: 'sku_code',
-  sku_name: 'sku_name',
+  skuCode: 'skuCode',
+  skuName: 'skuName',
   description: 'description',
-  client_sku_code: 'client_sku_code',
+  clientSkuCode: 'clientSkuCode',
   quantity: 'quantity',
-  size_dimensions: 'size_dimensions',
+  sizeDimensions: 'sizeDimensions',
   status: 'status',
   uom: 'uom',
-  unit_cost_price: 'unit_cost_price',
-  brand_name: 'brand_name',
+  unitCostPrice: 'unitCostPrice',
+  brandName: 'brandName',
   gtin: 'gtin',
   batch: 'batch',
   expiry: 'expiry',
@@ -233,10 +245,11 @@ exports.Prisma.ItemScalarFieldEnum = {
   barcode: 'barcode',
   qrCode: 'qrCode',
   serialNumber: 'serialNumber',
-  upc_code: 'upc_code',
-  box_dimensions: 'box_dimensions',
+  upcCode: 'upcCode',
+  boxDimensions: 'boxDimensions',
   metadata: 'metadata',
   brandId: 'brandId',
+  itemMasterId: 'itemMasterId',
   tenantId: 'tenantId',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
@@ -254,7 +267,7 @@ exports.Prisma.AuditScalarFieldEnum = {
   id: 'id',
   name: 'name',
   status: 'status',
-  audit_date_time: 'audit_date_time',
+  auditDateTime: 'auditDateTime',
   suggestedChanges: 'suggestedChanges',
   transfersCleared: 'transfersCleared',
   itemsArranged: 'itemsArranged',
@@ -266,8 +279,10 @@ exports.Prisma.AuditScalarFieldEnum = {
   pharmacistSigned: 'pharmacistSigned',
   tenantId: 'tenantId',
   branchId: 'branchId',
+  itemMasterId: 'itemMasterId',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.AuditSectionScalarFieldEnum = {
@@ -279,7 +294,8 @@ exports.Prisma.AuditSectionScalarFieldEnum = {
   lockReason: 'lockReason',
   lockedBy: 'lockedBy',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.AuditAssignmentScalarFieldEnum = {
@@ -296,12 +312,13 @@ exports.Prisma.AuditSohBaselineScalarFieldEnum = {
   auditId: 'auditId',
   itemId: 'itemId',
   quantity: 'quantity',
-  createdAt: 'createdAt'
+  createdAt: 'createdAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.CountEventScalarFieldEnum = {
   id: 'id',
-  client_event_id: 'client_event_id',
+  clientEventId: 'clientEventId',
   tenantId: 'tenantId',
   sectionId: 'sectionId',
   itemId: 'itemId',
@@ -312,7 +329,9 @@ exports.Prisma.CountEventScalarFieldEnum = {
   dataSource: 'dataSource',
   scannedAt: 'scannedAt',
   durationSeconds: 'durationSeconds',
-  metadata: 'metadata'
+  metadata: 'metadata',
+  createdAt: 'createdAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.SectionItemTotalScalarFieldEnum = {
@@ -415,13 +434,15 @@ exports.Prisma.ErrorLogScalarFieldEnum = {
 exports.Prisma.ImportJobScalarFieldEnum = {
   id: 'id',
   tenantId: 'tenantId',
+  itemMasterId: 'itemMasterId',
   status: 'status',
   total: 'total',
   processed: 'processed',
   failed: 'failed',
   message: 'message',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt'
 };
 
 exports.Prisma.SortOrder = {
@@ -465,8 +486,30 @@ exports.LocationType = exports.$Enums.LocationType = {
   BIN: 'BIN'
 };
 
+exports.AuditStatus = exports.$Enums.AuditStatus = {
+  DRAFT: 'DRAFT',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED'
+};
+
+exports.SectionStatus = exports.$Enums.SectionStatus = {
+  OPEN: 'OPEN',
+  LOCKED: 'LOCKED',
+  COMPLETED: 'COMPLETED'
+};
+
+exports.JobStatus = exports.$Enums.JobStatus = {
+  PENDING: 'PENDING',
+  PROCESSING: 'PROCESSING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  STARTING: 'STARTING'
+};
+
 exports.Prisma.ModelName = {
   Tenant: 'Tenant',
+  ItemMaster: 'ItemMaster',
   Brand: 'Brand',
   Branch: 'Branch',
   User: 'User',

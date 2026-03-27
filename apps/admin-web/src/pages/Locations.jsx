@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { MapPin, ChevronRight, ChevronDown, Plus, QrCode } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const LocationNode = ({ node, level = 0 }) => {
     const [isOpen, setIsOpen] = useState(true);
@@ -33,7 +33,7 @@ const Locations = () => {
 
     const fetchTree = async () => {
         try {
-            const response = await axios.get(`${API}/locations/tree?branchId=DEFAULT`);
+            const response = await api.get('/locations/tree?branchId=DEFAULT');
             setTree(response.data);
         } catch (error) {
             console.error('Error fetching tree', error);

@@ -17,6 +17,26 @@ import Brands from './pages/Brands';
 import Logs from './pages/Logs';
 import Company from './pages/Company';
 
+import { useState, useEffect } from 'react';
+
+const GlobalLoadingIndicator = () => {
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const handleLoading = (e) => setLoading(e.detail.loading);
+        window.addEventListener('GLOBAL_LOADING', handleLoading);
+        return () => window.removeEventListener('GLOBAL_LOADING', handleLoading);
+    }, []);
+
+    if (!loading) return null;
+
+    return (
+        <div className="fixed top-0 left-0 right-0 z-[9999] h-1 bg-[#0f172a]/20 overflow-hidden">
+            <div className="h-full bg-primary-brand animate-progress-bar w-[40%]" />
+        </div>
+    );
+};
+
 const ProtectedRoute = ({ children }) => {
     const { user, loading } = useAuth();
     if (loading) return (
@@ -31,84 +51,34 @@ const ProtectedRoute = ({ children }) => {
     return <Layout>{children}</Layout>;
 };
 
+import GlobalErrorBoundary from './components/GlobalErrorBoundary';
+
 function App() {
     return (
-        <AuthProvider>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/register" element={<Register />} />
-
-                    <Route path="/" element={
-                        <ProtectedRoute>
-                            <Dashboard />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/branches" element={
-                        <ProtectedRoute>
-                            <Branches />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/users" element={
-                        <ProtectedRoute>
-                            <Users />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/locations" element={
-                        <ProtectedRoute>
-                            <Locations />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/items" element={
-                        <ProtectedRoute>
-                            <Items />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/audits" element={
-                        <ProtectedRoute>
-                            <Audits />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/audits/:id" element={
-                        <ProtectedRoute>
-                            <AuditDetail />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/reports" element={
-                        <ProtectedRoute>
-                            <Reports />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/logs" element={
-                        <ProtectedRoute>
-                            <Logs />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/brands" element={
-                        <ProtectedRoute>
-                            <Brands />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="/company" element={
-                        <ProtectedRoute>
-                            <Company />
-                        </ProtectedRoute>
-                    } />
-
-                    <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-            </BrowserRouter>
-        </AuthProvider>
+        <GlobalErrorBoundary>
+            <AuthProvider>
+                <GlobalLoadingIndicator />
+                <BrowserRouter>
+                    <Routes>
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/register" element={<Register />} />
+                        {/* ... rest of routes ... */}
+                        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                        <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>} />
+                        <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
+                        <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
+                        <Route path="/items" element={<ProtectedRoute><Items /></ProtectedRoute>} />
+                        <Route path="/audits" element={<ProtectedRoute><Audits /></ProtectedRoute>} />
+                        <Route path="/audits/:id" element={<ProtectedRoute><AuditDetail /></ProtectedRoute>} />
+                        <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+                        <Route path="/logs" element={<ProtectedRoute><Logs /></ProtectedRoute>} />
+                        <Route path="/brands" element={<ProtectedRoute><Brands /></ProtectedRoute>} />
+                        <Route path="/company" element={<ProtectedRoute><Company /></ProtectedRoute>} />
+                        <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                </BrowserRouter>
+            </AuthProvider>
+        </GlobalErrorBoundary>
     );
 }
 

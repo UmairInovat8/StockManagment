@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 import { Building2, Save, Tag, Hash, Package, GitBranch, Users, ClipboardCheck, Loader2 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
     <div className="bg-white border border-slate-100 rounded-2xl p-6 flex items-center gap-4">
@@ -25,7 +25,7 @@ const Company = () => {
 
     const fetchCompany = async () => {
         try {
-            const res = await axios.get(`${API}/tenant`);
+            const res = await api.get('/tenant');
             setCompany(res.data);
             setFormData({
                 company_name: res.data.company_name || '',
@@ -44,7 +44,7 @@ const Company = () => {
         e.preventDefault();
         setSaving(true);
         try {
-            const res = await axios.patch(`${API}/tenant`, formData);
+            const res = await api.patch('/tenant', formData);
             setCompany(res.data);
             setEditMode(false);
         } catch (error) {

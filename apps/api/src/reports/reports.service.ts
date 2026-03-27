@@ -48,7 +48,7 @@ export class ReportsService {
         const data = await this.calculateVariance(auditId);
         // basic CSV formatter
         const header = 'SKU_Code,SKU_Name,SOH,Counted,Variance\n';
-        const rows = data.map(v => `${v.item.sku_code},"${v.item.sku_name}",${v.sohQuantity},${v.countedQuantity},${v.variance}`).join('\n');
+        const rows = data.map(v => `${v.item.skuCode},"${v.item.skuName}",${v.sohQuantity},${v.countedQuantity},${v.variance}`).join('\n');
         return header + rows;
     }
 }

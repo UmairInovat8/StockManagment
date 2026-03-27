@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { parseFileToRows, getRowValue } from '../common/parse-file.util';
 
 @Injectable()
 export class BranchesService {
@@ -7,9 +8,9 @@ export class BranchesService {
 
     async findAll(tenantId: string) {
         return this.prisma.branch.findMany({
-            where: { tenantId },
-            include: { brand: { select: { id: true, brand_name: true } } },
-            orderBy: { branch_name: 'asc' },
+            where: { tenantId, deletedAt: null },
+            include: { brand: { select: { id: true, brandName: true } } },
+            orderBy: { branchName: 'asc' },
         });
     }
 
@@ -20,7 +21,20 @@ export class BranchesService {
     }
 
     async create(data: any) {
-        const { brandId, tenantId, branch_name, branch_code, status, poc, branch_location, resources_assigned, counters_count, shelves_count, gondolas_count, area_manager_name, business_entity_type, invoice_to } = data;
+        const brandId = data.brandId || data.brand_id;
+        const tenantId = data.tenantId || data.tenant_id;
+        const branchName = data.branchName || data.branch_name;
+        const branchCode = data.branchCode || data.branch_code;
+        const status = data.status;
+        const poc = data.poc;
+        const branchLocation = data.branchLocation || data.branch_location;
+        const resourcesAssigned = data.resourcesAssigned || data.resources_assigned;
+        const countersCount = data.countersCount || data.counters_count;
+        const shelvesCount = data.shelvesCount || data.shelves_count;
+        const gondolasCount = data.gondolasCount || data.gondolas_count;
+        const areaManagerName = data.areaManagerName || data.area_manager_name;
+        const businessEntityType = data.businessEntityType || data.business_entity_type;
+        const invoiceTo = data.invoiceTo || data.invoice_to;
         let resolvedBrandId = brandId;
         if (!resolvedBrandId) {
             const defaultBrand = await this.prisma.brand.findFirst({ where: { tenantId } });
@@ -29,18 +43,18 @@ export class BranchesService {
         }
         return this.prisma.branch.create({
             data: {
-                branch_name,
-                branch_code,
+                branchName,
+                branchCode,
                 status: status || 'ACTIVE',
                 poc,
-                branch_location,
-                resources_assigned: resources_assigned ? parseInt(resources_assigned) : null,
-                counters_count: counters_count ? parseInt(counters_count) : null,
-                shelves_count: shelves_count ? parseInt(shelves_count) : null,
-                gondolas_count: gondolas_count ? parseInt(gondolas_count) : null,
-                area_manager_name,
-                business_entity_type,
-                invoice_to,
+                branchLocation,
+                resourcesAssigned: resourcesAssigned ? parseInt(resourcesAssigned) : null,
+                countersCount: countersCount ? parseInt(countersCount) : null,
+                shelvesCount: shelvesCount ? parseInt(shelvesCount) : null,
+                gondolasCount: gondolasCount ? parseInt(gondolasCount) : null,
+                areaManagerName,
+                businessEntityType,
+                invoiceTo,
                 brandId: resolvedBrandId,
                 tenantId,
             },
@@ -48,27 +62,76 @@ export class BranchesService {
     }
 
     async update(id: string, tenantId: string, data: any) {
-        const { branch_name, branch_code, status, poc, branch_location, resources_assigned, counters_count, shelves_count, gondolas_count, area_manager_name, business_entity_type, invoice_to } = data;
+        const { branchName, branchCode, status, poc, branchLocation, resourcesAssigned, countersCount, shelvesCount, gondolasCount, areaManagerName, businessEntityType, invoiceTo } = data;
         return this.prisma.branch.update({
             where: { id },
             data: {
-                branch_name,
-                branch_code,
+                branchName,
+                branchCode,
                 status,
                 poc,
-                branch_location,
-                resources_assigned: resources_assigned ? parseInt(resources_assigned) : undefined,
-                counters_count: counters_count ? parseInt(counters_count) : undefined,
-                shelves_count: shelves_count ? parseInt(shelves_count) : undefined,
-                gondolas_count: gondolas_count ? parseInt(gondolas_count) : undefined,
-                area_manager_name,
-                business_entity_type,
-                invoice_to,
+                branchLocation,
+                resourcesAssigned: resourcesAssigned ? parseInt(resourcesAssigned) : undefined,
+                countersCount: countersCount ? parseInt(countersCount) : undefined,
+                shelvesCount: shelvesCount ? parseInt(shelvesCount) : undefined,
+                gondolasCount: gondolasCount ? parseInt(gondolasCount) : undefined,
+                areaManagerName,
+                businessEntityType,
+                invoiceTo,
             },
         });
     }
 
     async remove(id: string, tenantId: string) {
         return this.prisma.branch.delete({ where: { id } });
+    }
+
+    async importLocations(branchId: string, file: Express.Multer.File): Promise<{ imported: number; skipped: number }> {
+        const rows = parseFileToRows(file);
+        
+        let imported = 0;
+        let skipped = 0;
+
+        for (const row of rows) {
+            // Support both the full column name and common abbreviations
+            const code = getRowValue(row, ['Location', 'location', 'LOCATION', 'loc_code']);
+            if (!code) { skipped++; continue; }
+
+            const name = getRowValue(row, ['Zone', 'zone', 'ZONE', 'Area', 'area']) || code;
+            const qrValue = `QR-${code}`;
+            const sequence = getRowValue(row, ['Count sequence', 'count_sequence', 'Sequence']);
+            const countGroup = getRowValue(row, ['Count Group', 'count_group', 'CountGroup']);
+            const locationType = 'SHELF'; // default — can be derived from Type column later
+
+            const metadata: Record<string, any> = {};
+            if (name) metadata.name = name;
+            if (sequence) metadata.sequence = sequence;
+            if (countGroup) metadata.countGroup = countGroup;
+
+            try {
+                await this.prisma.location.upsert({
+                    where: { branchId_code: { branchId, code: code! } },
+                    update: { metadata },
+                    create: {
+                        code: code!,
+                        qrValue,
+                        locationType: locationType as any,
+                        metadata,
+                        branchId,
+                    },
+                });
+                imported++;
+            } catch (e) {
+                console.error(`DB upsert error for code ${code}:`, e);
+                // Throw on the first DB error so the UI alerts immediately
+                if (imported === 0) {
+                    const { BadRequestException } = require('@nestjs/common');
+                    throw new BadRequestException(`Database Insertion Error on code '${code}': ${e.message}`);
+                }
+                skipped++;
+            }
+        }
+
+        return { imported, skipped };
     }
 }
