@@ -275,6 +275,7 @@ model ItemIdentifier {
   item   Item   @relation(fields: [itemId], references: [id])
 
   @@index([value])
+  @@index([itemId])
   @@map("item_identifiers")
 }
 

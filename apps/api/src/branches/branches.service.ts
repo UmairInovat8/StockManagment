@@ -16,7 +16,11 @@ export class BranchesService {
 
     async findOne(id: string, tenantId: string) {
         return this.prisma.branch.findFirst({
-            where: { id, tenantId },
+            where: { id, tenantId, deletedAt: null },
+            include: {
+                brand: { select: { id: true, brandName: true, brandCode: true } },
+                tenant: { select: { id: true, companyName: true, companyCode: true } },
+            },
         });
     }
 

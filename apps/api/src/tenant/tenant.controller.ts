@@ -98,7 +98,10 @@ export class TenantController {
 
     @Patch()
     async updateProfile(@Body() body: any, @Request() req: any) {
-        const { companyName, companyCode, metadata } = body;
+        const companyName = body.companyName || body.company_name;
+        const companyCode = body.companyCode || body.company_code;
+        const metadata = body.metadata;
+
         return this.prisma.tenant.update({
             where: { id: req.user.tenantId },
             data: {

@@ -20,7 +20,7 @@ const Company = () => {
     const [company, setCompany] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [formData, setFormData] = useState({ company_name: '', company_code: '' });
+    const [formData, setFormData] = useState({ companyName: '', companyCode: '' });
     const [editMode, setEditMode] = useState(false);
 
     const fetchCompany = async () => {
@@ -28,8 +28,8 @@ const Company = () => {
             const res = await api.get('/tenant');
             setCompany(res.data);
             setFormData({
-                company_name: res.data.company_name || '',
-                company_code: res.data.company_code || '',
+                companyName: res.data.companyName || res.data.company_name || '',
+                companyCode: res.data.companyCode || res.data.company_code || '',
             });
         } catch (error) {
             console.error('Error fetching company profile', error);
@@ -113,8 +113,8 @@ const Company = () => {
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Company Name *</label>
                                 <input
                                     className="clean-input mt-1"
-                                    value={formData.company_name}
-                                    onChange={e => setFormData({ ...formData, company_name: e.target.value })}
+                                    value={formData.companyName}
+                                    onChange={e => setFormData({ ...formData, companyName: e.target.value })}
                                     placeholder="e.g. athGadlang Holdings"
                                     required
                                 />
@@ -123,8 +123,8 @@ const Company = () => {
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Company Code *</label>
                                 <input
                                     className="clean-input mt-1 font-mono"
-                                    value={formData.company_code}
-                                    onChange={e => setFormData({ ...formData, company_code: e.target.value })}
+                                    value={formData.companyCode}
+                                    onChange={e => setFormData({ ...formData, companyCode: e.target.value })}
                                     placeholder="e.g. ATHG-001"
                                     required
                                 />
@@ -133,7 +133,7 @@ const Company = () => {
                         <div className="flex gap-4 pt-4">
                             <button
                                 type="button"
-                                onClick={() => { setEditMode(false); setFormData({ company_name: company.company_name, company_code: company.company_code }); }}
+                                onClick={() => { setEditMode(false); setFormData({ companyName: company.companyName || company.company_name, companyCode: company.companyCode || company.company_code }); }}
                                 className="flex-1 py-4 text-slate-400 font-black uppercase tracking-[0.2em] text-[10px] border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all active:scale-95"
                             >
                                 Cancel
@@ -155,18 +155,18 @@ const Company = () => {
                                 <Building2 size={32} className="text-[#0f172a]" />
                             </div>
                             <div>
-                                <h2 className="text-2xl font-black text-[#0f172a] tracking-tight">{company?.company_name}</h2>
-                                <p className="text-sm font-mono text-slate-400 mt-1">{company?.company_code}</p>
+                                <h2 className="text-2xl font-black text-[#0f172a] tracking-tight">{company?.companyName || company?.company_name}</h2>
+                                <p className="text-sm font-mono text-slate-400 mt-1">{company?.companyCode || company?.company_code}</p>
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-6 border-t border-slate-50 pt-6">
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Company Name</p>
-                                <p className="text-sm font-bold text-[#0f172a]">{company?.company_name}</p>
+                                <p className="text-sm font-bold text-[#0f172a]">{company?.companyName || company?.company_name}</p>
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Company Code</p>
-                                <p className="text-sm font-mono font-bold text-[#0f172a]">{company?.company_code}</p>
+                                <p className="text-sm font-mono font-bold text-[#0f172a]">{company?.companyCode || company?.company_code}</p>
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tenant ID</p>

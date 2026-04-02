@@ -7,6 +7,13 @@ import { LocationsService } from './locations.service';
 export class LocationsController {
     constructor(private locationsService: LocationsService) { }
 
+    @Get()
+    async findAll(@Request() req: any) {
+        const branchId = req.query.branchId;
+        const tenantId = req.user.tenantId;
+        return this.locationsService.findAll(tenantId, branchId);
+    }
+
     @Get('tree')
     async getTree(@Request() req: any) {
         const branchId = req.query.branchId;

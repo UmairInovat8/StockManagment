@@ -5,6 +5,17 @@ import { PrismaService } from '../prisma/prisma.service';
 export class LocationsService {
     constructor(private prisma: PrismaService) { }
 
+    async findAll(tenantId: string, branchId?: string) {
+        return this.prisma.location.findMany({
+            where: {
+                branch: { tenantId },
+                ...(branchId ? { branchId } : {}),
+                deletedAt: null,
+            },
+            orderBy: { code: 'asc' },
+        });
+    }
+
     async findTree(branchId: string) {
         // Basic implementation: fetch all and build tree or just fetch hierarchy
         // @ts-ignore

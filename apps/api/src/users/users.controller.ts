@@ -1,19 +1,24 @@
-import { Controller, Get, Request } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Controller, Get, Post, Body, Request } from '@nestjs/common';
+import { UsersService } from './users.service';
 
 @Controller('users')
 export class UsersController {
-    constructor(private prisma: PrismaService) { }
+    constructor(private usersService: UsersService) { }
 
     @Get()
     async findAll(@Request() req: any) {
-        // @ts-ignore
-        return this.prisma.user.findMany({
-            where: { tenantId: req.user.tenantId },
-            include: {
-                roles: { include: { role: true } },
-                branchAccess: { include: { branch: true } }
-            }
-        });
+        const roles = req.user.roles || [];
+        const isGlobal = roles.includes('Admin') || roles.includes('AuditManager');
+        return this.usersService.findAll(req.user.tenantId, isGlobal);
+    }
+
+    @Get('roles')
+    async findAllRoles(@Request() req: any) {
+        return this.usersService.getRoles(req.user.tenantId);
+    }
+
+    @Post()
+    async create(@Request() req: any, @Body() createUserDto: any) {
+        return this.usersService.create(req.user.tenantId, createUserDto);
     }
 }

@@ -8,41 +8,34 @@ import * as Papa from 'papaparse';
 export function parseFileToRows(file: Express.Multer.File): Record<string, any>[] {
     const name = (file.originalname || '').toLowerCase();
 
+    // Keywords that indicate a header row — broad and fuzzy
+    const HEADER_KEYWORDS = ['sku', 'code', 'qty', 'quant', 'stock', 'article', 'item', 'product', 'material', 'barcode', 'gtin', 'location', 'bin', 'warehouse', 'name', 'price', 'uom', 'soh', 'description'];
+
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
-        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+        const workbook = XLSX.read(file.buffer, { type: 'buffer', cellDates: true });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        
-        // Scan for actual header row (ignoring metadata titles at top)
+
         const rawData = XLSX.utils.sheet_to_json<any[]>(firstSheet, { header: 1 });
-        let headerRowIndex = -1;
+        let headerRowIndex = 0; // Default to row 0
+        let maxScore = 0;
+
         for (let i = 0; i < Math.min(20, rawData.length); i++) {
-            const cells = (rawData[i] || []).map(c => String(c).replace(/\s+/g, ' ').trim().toLowerCase());
-            const isHeader = cells.some(c => 
-                c === 'location' || 
-                c === 'warehouse' || 
-                c === 'article code' || 
-                c === 'item code' || 
-                c === 'sku' ||
-                c === 'quantity' ||
-                c === 'soh' ||
-                c === 'stock'
-            );
-            if (isHeader) {
+            const cells = (rawData[i] || []).map((c: any) => String(c).replace(/\s+/g, ' ').trim().toLowerCase());
+            const score = cells.reduce((acc: number, c: string) => {
+                return acc + HEADER_KEYWORDS.filter(kw => c.includes(kw)).length;
+            }, 0);
+            if (score > maxScore) {
+                maxScore = score;
                 headerRowIndex = i;
-                break;
             }
-        }
-        
-        // Safety net: if not found, expose the raw grid to debug exactly why
-        if (headerRowIndex === -1) {
-            const trace = rawData.slice(0, 5).map((row, idx) => `Row${idx}: [${row.join(' | ')}]`).join(' \n');
-            const { BadRequestException } = require('@nestjs/common');
-            throw new BadRequestException(`Auto-detector could not find headers. Raw sheet top rows:\n${trace}`);
+            if (maxScore >= 3) break; // Strong match found early
         }
 
-        return XLSX.utils.sheet_to_json(firstSheet, { 
-            range: headerRowIndex, 
-            defval: '' 
+        console.log(`[PARSE] Detected XLSX header at row ${headerRowIndex} (score=${maxScore})`);
+
+        return XLSX.utils.sheet_to_json(firstSheet, {
+            range: headerRowIndex,
+            defval: ''
         }) as Record<string, any>[];
     }
 
@@ -50,15 +43,21 @@ export function parseFileToRows(file: Express.Multer.File): Record<string, any>[
     const text = file.buffer.toString('utf-8');
     const lines = text.split(/\r?\n/);
     let headerRowIndex = 0;
+    let maxScore = 0;
+
     for (let i = 0; i < Math.min(20, lines.length); i++) {
         const lower = lines[i].toLowerCase();
-        if (lower.includes('location') || lower.includes('article code') || lower.includes('sku') || lower.includes('warehouse')) {
+        const score = HEADER_KEYWORDS.filter(kw => lower.includes(kw)).length;
+        if (score > maxScore) {
+            maxScore = score;
             headerRowIndex = i;
-            break;
         }
+        if (maxScore >= 3) break;
     }
+
+    console.log(`[PARSE] Detected CSV header at row ${headerRowIndex} (score=${maxScore})`);
+
     const dataToParse = lines.slice(headerRowIndex).join('\n');
-    
     const result = Papa.parse(dataToParse, {
         header: true,
         skipEmptyLines: true,

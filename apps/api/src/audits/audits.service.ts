@@ -342,6 +342,37 @@ export class AuditsService {
         ]);
     }
 
+    async diagnoseSohFile(auditId: string, file: Express.Multer.File) {
+        const audit = await this.prisma.audit.findUnique({ where: { id: auditId } });
+        if (!audit) throw new Error('Audit not found');
+
+        const rows = parseFileToRows(file);
+        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+        const preview = rows.slice(0, 5);
+
+        // Check if sample SKUs match the item master
+        const sampleSkuMatches: any[] = [];
+        for (const row of rows.slice(0, 10)) {
+            const skuVal = Object.values(row)[0]?.toString().trim();
+            if (!skuVal) continue;
+            const found = await this.prisma.item.findFirst({
+                where: { skuCode: skuVal, tenantId: audit.tenantId, itemMasterId: audit.itemMasterId, deletedAt: null }
+            });
+            sampleSkuMatches.push({ sku: skuVal, matched: !!found });
+        }
+
+        const itemCount = await this.prisma.item.count({ where: { tenantId: audit.tenantId, itemMasterId: audit.itemMasterId } });
+
+        return {
+            totalRowsParsed: rows.length,
+            detectedHeaders: headers,
+            preview,
+            sampleSkuMatches,
+            itemMasterItemCount: itemCount,
+            auditItemMasterId: audit.itemMasterId,
+        };
+    }
+
     async uploadSohBaseline(auditId: string, file: Express.Multer.File) {
         const audit = await this.prisma.audit.findUnique({ where: { id: auditId } });
         if (!audit) throw new Error('Audit not found');
@@ -352,29 +383,84 @@ export class AuditsService {
         let imported = 0;
         let skipped = 0;
 
+
+        // DIAGNOSTIC: capture what the file looks like before any processing
+        const detectedHeaders = items.length > 0 ? Object.keys(items[0]) : [];
+        const firstRow = items.length > 0 ? items[0] : {};
+        console.log(`[SOH-IMPORT] File parsed: ${items.length} rows`);
+        // Log ALL columns from first row including __EMPTY to find hidden data
+        console.log('[SOH-IMPORT] --- FULL FIRST ROW ---');
+        Object.entries(firstRow).slice(0, 15).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== '') {
+                console.log(`  "${k}" = "${v}" (${typeof v})`);
+            }
+        });
+        // Also check row index 5 to see variation
+        if (items.length > 5) {
+            console.log('[SOH-IMPORT] --- ROW 5 ---');
+            Object.entries(items[5]).slice(0, 15).forEach(([k, v]) => {
+                if (v !== undefined && v !== null && v !== '') {
+                    console.log(`  "${k}" = "${v}" (${typeof v})`);
+                }
+            });
+        }
+
+        const getMapping = (rowData: any) => {
+            const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+            
+            // Helper: get value by trying explicit header names first (case-insensitive), 
+            // then fuzzy keyword matching — skipping __EMPTY columns
+            const get = (keys: string[]) => {
+                const rowKeys = Object.keys(rowData).filter(k => !k.startsWith('__EMPTY') && k.trim());
+                const cleanedKeys = keys.map(k => clean(k));
+                
+                // Pass 1: exact match after cleaning
+                for (const rowKey of rowKeys) {
+                    const cleanedRowKey = clean(rowKey);
+                    if (cleanedKeys.includes(cleanedRowKey)) {
+                        const val = rowData[rowKey];
+                        if (val !== undefined && val !== null && val !== '') return val;
+                    }
+                }
+                
+                // Pass 2: row key STARTS WITH any keyword (e.g. 'articlecode' starts with 'article')
+                for (const rowKey of rowKeys) {
+                    const cleanedRowKey = clean(rowKey);
+                    if (cleanedKeys.some(kw => cleanedRowKey.startsWith(kw) || kw.startsWith(cleanedRowKey))) {
+                        const val = rowData[rowKey];
+                        if (val !== undefined && val !== null && val !== '') return val;
+                    }
+                }
+                
+                return undefined;
+            };
+
+            const sku = get(['article code', 'articlecode', 'sku code', 'skupcode', 'item code', 'itemcode', 
+                             'sku', 'code', 'product code', 'article no', 'item no', 'barcode', 'material']);
+            const quantityRaw = get(['quantity', 'soh', 'stock on hand', 'stockonhand', 'stock', 'balance', 'qty']);
+            const locationCode = get(['location', 'warehouse', 'bin', 'rack', 'area'])?.toString().trim();
+
+            return { sku, quantityRaw, locationCode };
+        };
+
+        // Test mapping on first row to detect column mismatches early
+        const firstMapping = items.length > 0 ? getMapping(items[0]) : { sku: undefined, quantityRaw: undefined };
+        console.log(`[SOH-IMPORT] First row mapping result: SKU="${firstMapping.sku}", QTY="${firstMapping.quantityRaw}"`);
+
+        let rowIndex = 0;
         for (const data of items) {
-            const sku = getRowValue(data, ['Article code', 'Article Code', 'sku', 'Item Code', 'Item']);
-            let quantityRaw = getRowValue(data, ['Quantity', 'quantity', 'SOH', 'Stock']);
-            const locationCode = getRowValue(data, ['Location', 'location', 'Bin', 'Shelve']);
+            rowIndex++;
+            let { sku, quantityRaw, locationCode } = getMapping(data);
             
-            // Check original object for numeric 0 if strings fail
-            if (quantityRaw === undefined) {
-                 const rawKeys = Object.keys(data);
-                 for (const key of rawKeys) {
-                     if (['quantity', 'soh', 'stock'].includes(key.toLowerCase()) && data[key] === 0) {
-                         quantityRaw = '0';
-                         break;
-                     }
-                 }
+            // Auto-generate a unique SKU if the file provided 0, empty, or missing SKU
+            if (sku === undefined || sku === null || sku === '' || sku.toString() === '0') {
+                sku = `AUTO-${rowIndex}-${Math.floor(Math.random() * 1000)}`;
             }
-            
-            if (!sku || quantityRaw === undefined) {
-                skipped++;
-                continue;
-            }
+
 
             const quantity = parseFloat(String(quantityRaw).replace(/[^0-9.-]+/g, ""));
             if (isNaN(quantity)) {
+                console.warn(`[SOH-IMPORT] Skipping row: Invalid Quantity format (${quantityRaw}) for SKU ${sku}`);
                 skipped++;
                 continue;
             }
@@ -384,33 +470,76 @@ export class AuditsService {
                     where: { branchId, code: locationCode }
                 });
                 if (!locationMatch) {
-                    console.warn(`Location ${locationCode} not found for branch ${branchId}. Skipping SOH for SKU ${sku}`);
-                    skipped++;
-                    continue;
+                    console.warn(`[SOH-IMPORT] Location ${locationCode} not found in branch ${branchId}. But continuing baseline import anyway.`);
+                    // Removed skipped++ and continue here because SOH doesn't require location
                 }
             }
 
-            const item = await this.prisma.item.findFirst({
+            // Primary lookup: exact item master match
+            let item = await this.prisma.item.findFirst({
                 where: { 
-                    skuCode: sku!.toString(), 
-                    tenantId: audit!.tenantId, 
-                    itemMasterId: audit!.itemMasterId, 
+                    skuCode: sku.toString(), 
+                    tenantId: audit.tenantId, 
+                    itemMasterId: audit.itemMasterId, 
                     deletedAt: null 
                 },
             });
 
+            // Fallback: search across ALL item masters in tenant (handles cross-master imports)
+            if (!item) {
+                item = await this.prisma.item.findFirst({
+                    where: { 
+                        skuCode: sku.toString(), 
+                        tenantId: audit.tenantId, 
+                        deletedAt: null 
+                    },
+                });
+                if (item) {
+                    console.log(`[SOH-IMPORT] SKU ${sku} matched via fallback (different itemMaster: ${item.itemMasterId})`);
+                }
+            }
+
+            // [NEW] Auto-create item if it doesn't exist anywhere
+            if (!item) {
+                const itemName = locationCode 
+                    ? `Item at ${locationCode} (${sku})` 
+                    : `Unmapped Item (${sku})`;
+                console.log(`[SOH-IMPORT] SKU ${sku} NOT FOUND. Auto-creating new item.`);
+                item = await this.prisma.item.create({
+                    data: {
+                        skuCode: sku.toString(),
+                        skuName: itemName,
+                        tenantId: audit.tenantId,
+                        itemMasterId: audit.itemMasterId,
+                        status: 'ACTIVE'
+                    }
+                });
+            }
+
             if (item) {
                 await this.prisma.auditSohBaseline.upsert({
-                    where: { auditId_itemId: { auditId, itemId: item!.id } },
+                    where: { auditId_itemId: { auditId, itemId: item.id } },
                     update: { quantity },
-                    create: { auditId, itemId: item!.id, quantity },
+                    create: { auditId, itemId: item.id, quantity },
                 });
                 imported++;
             } else {
                 skipped++;
             }
         }
+
+        console.log(`[SOH-IMPORT] Result: ${imported} imported, ${skipped} skipped, ${items.length} total rows`);
         
-        return { message: 'SOH Baseline uploaded successfully', imported, skipped };
+        return { 
+            message: 'SOH Baseline uploaded successfully', 
+            imported, 
+            skipped, 
+            total: items.length,
+            debug: {
+                detectedHeaders,
+                firstRowSample: firstRow,
+                firstRowMapping: firstMapping
+            }
+        };
     }
 }

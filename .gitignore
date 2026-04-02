@@ -11,3 +11,8 @@ build/
 .vite/
 *.swp
 *.bak
+
+# Temporary & Build
+tmp/
+app_build/
+exclude_list.txt

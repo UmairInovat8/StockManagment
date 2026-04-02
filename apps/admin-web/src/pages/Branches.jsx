@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { Search, Plus, MapPin, Phone, User, Settings, Edit2, Trash2, XCircle, ChevronRight, Globe, Tag, Building2, Pencil, Upload } from 'lucide-react';
 import ModalPortal from '../components/ModalPortal';
@@ -215,7 +216,9 @@ const Branches = () => {
                                     {branch.status || 'Active'}
                                 </span>
                             </div>
-                            <h3 className="font-black text-[#0f172a] text-lg tracking-tight">{branch.branchName || branch.branch_name}</h3>
+                            <Link to={`/branches/${branch.id}`}>
+                                <h3 className="font-black text-[#0f172a] text-lg tracking-tight hover:text-[#38bdf8] transition-colors">{branch.branchName || branch.branch_name}</h3>
+                            </Link>
                             <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest mt-1">Code: {branch.branchCode || branch.branch_code}</p>
                             {branch.poc && <p className="text-xs text-slate-500 mt-2 font-medium">POC: {branch.poc}</p>}
                             {(branch.branchLocation || branch.branch_location) && <p className="text-xs text-slate-400 mt-1">{branch.branchLocation || branch.branch_location}</p>}

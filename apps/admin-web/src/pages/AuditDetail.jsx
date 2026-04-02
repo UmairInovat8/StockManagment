@@ -112,7 +112,23 @@ const AuditDetail = () => {
         fd.append('file', file);
         try {
             const res = await api.post(`/audits/${id}/soh-baseline`, fd, { headers: { 'Content-Type': 'multipart/form-data' }});
-            alert(`✅ ${res.data.imported || 0} SOH records imported successfully. ${res.data.skipped || 0} skipped.`);
+            const { imported, skipped, total, debug } = res.data;
+            
+            if (imported === 0 && skipped > 0) {
+                // Show diagnostic info to help identify the issue
+                const headerInfo = debug?.detectedHeaders?.join(', ') || 'Could not detect headers';
+                const skuAttempt = debug?.firstRowMapping?.sku || '(none mapped)';
+                const qtyAttempt = debug?.firstRowMapping?.quantityRaw || '(none mapped)';
+                alert(
+                    `⚠️ Import Warning: 0 of ${total} records imported.\n\n` +
+                    `Detected Columns in File:\n"${headerInfo}"\n\n` +
+                    `Mapped Values from First Row:\n  SKU → "${skuAttempt}"\n  Quantity → "${qtyAttempt}"\n\n` +
+                    `If SKU or Quantity shows "(none mapped)", your file has non-standard column names.\n` +
+                    `Expected column names: "SKU", "Article Code", "Item Code", "Quantity", "SOH", "Stock"`
+                );
+            } else {
+                alert(`✅ ${imported} SOH records imported successfully. ${skipped} skipped.`);
+            }
             if (activeTab === 'variance') fetchVariance();
         } catch (e) {
             alert('Upload failed: ' + (e.response?.data?.message || e.message));

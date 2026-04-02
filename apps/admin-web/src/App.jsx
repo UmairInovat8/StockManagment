@@ -11,6 +11,7 @@ import Audits from './pages/Audits';
 import AuditDetail from './pages/AuditDetail';
 import Reports from './pages/Reports';
 import Branches from './pages/Branches';
+import BranchDetail from './pages/BranchDetail';
 import Users from './pages/Users';
 import Locations from './pages/Locations';
 import Brands from './pages/Brands';
@@ -65,6 +66,7 @@ function App() {
                         {/* ... rest of routes ... */}
                         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
                         <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>} />
+                        <Route path="/branches/:id" element={<ProtectedRoute><BranchDetail /></ProtectedRoute>} />
                         <Route path="/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
                         <Route path="/locations" element={<ProtectedRoute><Locations /></ProtectedRoute>} />
                         <Route path="/items" element={<ProtectedRoute><Items /></ProtectedRoute>} />

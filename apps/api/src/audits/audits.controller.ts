@@ -68,6 +68,12 @@ export class AuditsController {
         return this.auditsService.uploadSohBaseline(id, file);
     }
 
+    @Post(':id/soh-baseline/preview')
+    @UseInterceptors(FileInterceptor('file'))
+    async previewSoh(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Request() req: any) {
+        return this.auditsService.diagnoseSohFile(id, file);
+    }
+
     @Get(':id/variance-report')
     async getVarianceReport(@Param('id') id: string) {
         return this.auditsService.getVarianceReport(id);
