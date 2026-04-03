@@ -2,6 +2,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class SyncService {
     constructor(private prisma: PrismaService) { }
@@ -11,7 +13,7 @@ export class SyncService {
         
         // 1. Resolve SKUs in Bulk
         const skusToResolve = events
-            .filter(e => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.itemId))
+            .filter(e => !UUID_PATTERN.test(e.itemId))
             .map(e => e.itemId);
         
         const skuMap = new Map<string, string>();
@@ -37,7 +39,7 @@ export class SyncService {
                 metadata: event.metadata || {},
             };
         }).filter(e => {
-            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(e.itemId);
+            const isUuid = UUID_PATTERN.test(e.itemId);
             if (!isUuid) console.warn(`[SyncService] Skipping event ${e.clientEventId}: Item ID not resolvable.`);
             return isUuid;
         });
